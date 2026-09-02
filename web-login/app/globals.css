@@ -354,7 +354,7 @@ body {
   background: var(--dot-color);
 }
 
-/* 資料表格（可捲動） */
+/* 資料表格（可捲動，自動填滿剩餘高度） */
 .data-table-wrapper {
   flex: 1;
   overflow-y: auto;
@@ -366,63 +366,79 @@ body {
   margin-bottom: 8px;
 }
 
-/* 日均值行 */
-.date-avg-row {
+/* ===== 日期標題列（全日+時段平均） ===== */
+.date-header-row {
+  background: linear-gradient(135deg, #1e3a5f, #1a365d);
+  border-radius: 10px 10px 0 0;
+  padding: 10px 14px;
+  color: white;
+}
+.date-header-top {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: linear-gradient(135deg, #d4f5d4, #e8f8e8);
-  border-radius: 10px 10px 0 0;
-  border: 1px solid #c6ecc6;
-  border-bottom: none;
+  gap: 10px;
+  margin-bottom: 6px;
 }
 .date-badge {
-  background: #3b5a3b;
+  background: rgba(255,255,255,0.2);
   color: white;
   padding: 3px 10px;
   border-radius: 6px;
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.85rem;
+  font-weight: 700;
   flex-shrink: 0;
 }
-.avg-values {
+.date-header-allavg {
   display: flex;
   align-items: baseline;
-  gap: 2px;
-  flex: 1;
-}
-.avg-val {
-  font-size: 1.5rem;
+  gap: 3px;
+  font-size: 1.3rem;
   font-weight: 700;
 }
-.avg-val.sys { color: #166534; }
-.avg-val.dia { color: #6b21a8; }
-.avg-sep {
-  color: #94a3b8;
-  font-size: 1.2rem;
-  margin: 0 2px;
+.allavg-label {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: rgba(255,255,255,0.6);
+  margin-right: 4px;
 }
-.avg-heart {
-  font-size: 0.95rem;
-  color: #dc2626;
+.date-header-periods {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.period-avg-badge {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255,255,255,0.1);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.82rem;
   font-weight: 600;
-  margin-left: 8px;
 }
-.avg-label {
-  color: #64748b;
-  font-size: 0.72rem;
-  flex-shrink: 0;
+.period-avg-icon {
+  font-size: 0.75rem;
 }
 
-/* 個別紀錄行 */
+.avg-sep {
+  color: rgba(255,255,255,0.4);
+  font-size: 0.9rem;
+  margin: 0 1px;
+}
+.avg-heart {
+  font-size: 0.82rem;
+  color: #fca5a5;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* ===== 明細紀錄列 ===== */
 .record-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  background: #f0faf0;
-  border: 1px solid #c6ecc6;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
   border-top: none;
   transition: background 0.15s;
 }
@@ -430,26 +446,46 @@ body {
   border-radius: 0 0 10px 10px;
 }
 .record-row:hover {
-  background: #e2f5e2;
+  filter: brightness(0.97);
 }
 
+/* 時段配色 */
+.record-row.period-morning {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.record-row.period-afternoon {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.record-row.period-evening {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.record-period-icon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  width: 22px;
+  text-align: center;
+}
 .record-time {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: #475569;
   font-weight: 500;
-  min-width: 50px;
+  min-width: 44px;
 }
 .record-val {
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: #1e293b;
 }
 .record-sep {
   color: #94a3b8;
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
 .record-heart {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: #1e293b;
   font-weight: 600;
   margin-left: auto;
@@ -502,9 +538,10 @@ body {
   .range-btn { padding: 5px 10px; font-size: 0.78rem; }
   .chart-container { margin: 6px 8px; padding: 8px 4px 4px 4px; }
   .data-table-wrapper { padding: 0 8px 8px; }
-  .date-avg-row { padding: 8px 10px; gap: 8px; }
-  .avg-val { font-size: 1.3rem; }
-  .record-row { padding: 10px 10px; gap: 8px; }
-  .record-val { font-size: 1.2rem; }
+  .date-header-row { padding: 8px 10px; }
+  .date-header-allavg { font-size: 1.1rem; }
+  .period-avg-badge { font-size: 0.75rem; padding: 2px 6px; }
+  .record-row { padding: 8px 10px; gap: 8px; }
+  .record-val { font-size: 1.1rem; }
   .feature-card { padding: 1rem; }
 }
