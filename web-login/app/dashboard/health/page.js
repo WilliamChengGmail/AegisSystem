@@ -439,10 +439,17 @@ export default function HealthDashboard() {
                   <div key={`${row.date}-${idx}`} className={`record-row period-${row.period}`}>
                     <span className="record-period-icon">{periodIcon(row.period)}</span>
                     <span className="record-time">{fmtTime(row.date)}</span>
+                    
+                    <span className="metric-label">高壓</span>
                     <span className="record-val" style={valStyle(row.sys, 'sys')}>{row.sys}</span>
                     <span className="record-sep">/</span>
+                    <span className="metric-label">低壓</span>
                     <span className="record-val" style={valStyle(row.dia, 'dia')}>{row.dia}</span>
-                    <span className="record-heart" style={valStyle(row.pul, 'pul')}>❤️ {row.pul}</span>
+                    
+                    <span className="record-heart" style={valStyle(row.pul, 'pul')}>
+                      <span className="metric-label" style={{ marginRight: '4px' }}>心率</span>
+                      ❤️ {row.pul}
+                    </span>
                   </div>
                 ))}
               </div>
