@@ -37,18 +37,41 @@ export async function GET(request) {
 
     // 根據區間過濾
     let dataRes;
-    if (range === 'all') {
+    const start = searchParams.get('start');
+    const end = searchParams.get('end');
+
+    if (range === 'custom' && start && end) {
+      // 自訂時間起訖 (補上時間以便涵蓋全天)
+      const startTime = `${start} 00:00:00`;
+      const endTime = `${end} 23:59:59`;
+      dataRes = await db.execute({
+        sql: `SELECT date, sys, dia, pul FROM bp 
+              WHERE date >= ? AND date <= ? 
+              ORDER BY date DESC`,
+        args: [startTime, endTime]
+      });
+    } else if (range === 'all') {
       dataRes = await db.execute(
         "SELECT date, sys, dia, pul FROM bp ORDER BY date DESC"
       );
     } else {
-      const days = parseInt(range);
-      dataRes = await db.execute({
-        sql: `SELECT date, sys, dia, pul FROM bp 
-              WHERE date >= datetime(?, '-${days} days') 
-              ORDER BY date DESC`,
-        args: [latestDateStr]
+      const days = parseInt(range) || 3;
+      // 找出有資料的最新 N 天
+      const distinctDatesRes = await db.execute({
+        sql: `SELECT DISTINCT date(date) as d FROM bp ORDER BY d DESC LIMIT ${days}`
       });
+
+      if (distinctDatesRes.rows.length === 0) {
+        dataRes = { rows: [] };
+      } else {
+        const earliestDate = distinctDatesRes.rows[distinctDatesRes.rows.length - 1].d;
+        dataRes = await db.execute({
+          sql: `SELECT date, sys, dia, pul FROM bp 
+                WHERE date(date) >= ? 
+                ORDER BY date DESC`,
+          args: [earliestDate]
+        });
+      }
     }
 
     return NextResponse.json({
