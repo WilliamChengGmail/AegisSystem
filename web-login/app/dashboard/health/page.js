@@ -30,16 +30,16 @@ function parseLocalDate(dateStr) {
   return new Date(y, m - 1, d, hh, mm, ss);
 }
 
-/** 格式化為 MM/DD */
+/** 格式化為 YYYY/MM/DD */
 function fmtDate(dateStr) {
   const d = parseLocalDate(dateStr);
-  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** 格式化為 HH:MM */
+/** 格式化為 HH:MM:SS */
 function fmtTime(dateStr) {
   const d = parseLocalDate(dateStr);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
 }
 
 /** 格式化為 YYYY-MM-DD */
@@ -117,7 +117,7 @@ function groupByLogicalDate(rows) {
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([logicalDate, g]) => ({
       logicalDate,
-      displayDate: `${logicalDate.substring(5).replace('-', '/')}`,
+      displayDate: `${logicalDate.replace(/-/g, '/')}`,
       allAvg: { sys: avgOf(g.all, 'sys'), dia: avgOf(g.all, 'dia'), pul: avgOf(g.all, 'pul') },
       morningAvg: g.morning.length > 0
         ? { sys: avgOf(g.morning, 'sys'), dia: avgOf(g.morning, 'dia'), pul: avgOf(g.morning, 'pul') } : null,
@@ -156,15 +156,59 @@ function filterByRange(allData, range, customStart, customEnd) {
 
 /**
  * 從分組資料建立圖表用的「每日平均」陣列（舊→新排序）。
+ * 自動填補缺失日期（值為 null），使折線圖出現斷點以標示缺少量測。
  */
 function buildChartData(grouped) {
-  return [...grouped].reverse().map(g => ({
-    name: g.displayDate,
-    logicalDate: g.logicalDate,
-    sys: g.allAvg.sys,
-    dia: g.allAvg.dia,
-    pul: g.allAvg.pul,
-  }));
+  const sorted = [...grouped].reverse(); // 舊→新
+  if (sorted.length < 2) {
+    return sorted.map(g => ({
+      name: g.displayDate,
+      logicalDate: g.logicalDate,
+      sys: g.allAvg.sys,
+      dia: g.allAvg.dia,
+      pul: g.allAvg.pul,
+      isMissing: false,
+    }));
+  }
+
+  const result = [];
+  const startDate = parseLocalDate(sorted[0].logicalDate + ' 00:00:00');
+  const endDate = parseLocalDate(sorted[sorted.length - 1].logicalDate + ' 00:00:00');
+
+  // 建立日期→資料的查找表
+  const dataMap = {};
+  sorted.forEach(g => { dataMap[g.logicalDate] = g; });
+
+  // 逐日遍歷，填補缺失日期
+  const current = new Date(startDate);
+  while (current <= endDate) {
+    const key = fmtISO(current);
+    if (dataMap[key]) {
+      const g = dataMap[key];
+      result.push({
+        name: g.displayDate,
+        logicalDate: g.logicalDate,
+        sys: g.allAvg.sys,
+        dia: g.allAvg.dia,
+        pul: g.allAvg.pul,
+        isMissing: false,
+      });
+    } else {
+      // 缺失日期：插入 null 值
+      const displayDate = key.replace(/-/g, '/');
+      result.push({
+        name: displayDate,
+        logicalDate: key,
+        sys: null,
+        dia: null,
+        pul: null,
+        isMissing: true,
+      });
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return result;
 }
 
 // ========== 主元件 ==========
@@ -184,10 +228,15 @@ export default function HealthDashboard() {
 
   // Brush 連動
   const [brushRange, setBrushRange] = useState(null);
+  const [brushKey, setBrushKey] = useState(0); // 用於強制重新渲染 Brush
 
   // 表格捲動連動
   const tableRef = useRef(null);
   const dateGroupRefs = useRef({});
+
+  // 滾輪縮放連動
+  const chartContainerRef = useRef(null);
+  const zoomStateRef = useRef({ len: 0, range: null });
 
   // ===== 資料讀取 (僅一次) =====
   useEffect(() => {
@@ -243,6 +292,56 @@ export default function HealthDashboard() {
       setBrushRange({ startIndex: range.startIndex, endIndex: range.endIndex });
     }
   }, []);
+
+  // ===== 滾輪縮放時間軸 =====
+  useEffect(() => {
+    zoomStateRef.current = { len: chartData.length, range: brushRange };
+  }, [chartData.length, brushRange]);
+
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e) => {
+      const { len, range } = zoomStateRef.current;
+      if (len <= 5) return;
+
+      // 判斷是否在時間軸(X軸)或選擇器(Brush)上方
+      // 加上座標判斷，避免因 Recharts 透明遮罩擋住而失效
+      const isOverAxisClass = e.target.closest('.recharts-brush') || e.target.closest('.recharts-cartesian-axis-x');
+      const rect = container.getBoundingClientRect();
+      const isOverBottom = (e.clientY - rect.top) > (rect.height - 60); // 底部 60px 範圍
+
+      if (!isOverAxisClass && !isOverBottom) return;
+
+      e.preventDefault();
+
+      const start = range ? range.startIndex : 0;
+      const end = range ? range.endIndex : len - 1;
+      
+      // 動態縮放比例：至少 1，最大為當前範圍的 10%
+      const currentSpan = end - start;
+      const zoomFactor = Math.max(1, Math.floor(currentSpan * 0.1));
+      let newStart = start;
+      let newEnd = end;
+
+      if (e.deltaY < 0) {
+        newStart = Math.min(start + zoomFactor, end - 1);
+        newEnd = Math.max(end - zoomFactor, start + 1);
+      } else if (e.deltaY > 0) {
+        newStart = Math.max(start - zoomFactor, 0);
+        newEnd = Math.min(end + zoomFactor, len - 1);
+      }
+
+      if (newStart !== start || newEnd !== end) {
+        setBrushRange({ startIndex: newStart, endIndex: newEnd });
+        setBrushKey(k => k + 1); // 強制 Brush 更新視圖
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [loading, filteredData.length]); // 確保在元件實際渲染後才綁定事件
 
   // ===== 判斷超標 =====
   const isWarning = useCallback((val, type) => {
@@ -344,7 +443,7 @@ export default function HealthDashboard() {
       ) : (
         <>
           {/* ===== 折線圖 (每日平均) ===== */}
-          <div className="chart-container">
+          <div className="chart-container" ref={chartContainerRef}>
             <div className="chart-legend">
               <span className="legend-item" style={{ '--dot-color': '#22c55e' }}>高壓(均)</span>
               <span className="legend-item" style={{ '--dot-color': '#8b5cf6' }}>低壓(均)</span>
@@ -388,19 +487,22 @@ export default function HealthDashboard() {
                   </>
                 )}
 
-                <Line type="monotone" dataKey="sys" name="sys" stroke="#22c55e" strokeWidth={2.5} dot={{ r: 3, fill: '#22c55e' }} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="dia" name="dia" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="pul" name="pul" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: '#ef4444' }} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="sys" name="sys" stroke="#22c55e" strokeWidth={2.5} dot={{ r: 3, fill: '#22c55e' }} activeDot={{ r: 5 }} connectNulls={false} />
+                <Line type="monotone" dataKey="dia" name="dia" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }} connectNulls={false} />
+                <Line type="monotone" dataKey="pul" name="pul" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: '#ef4444' }} activeDot={{ r: 5 }} connectNulls={false} />
 
                 {/* Brush 拖曳選擇器 */}
                 {chartData.length > 5 && (
                   <Brush
+                    key={`brush-${brushKey}`}
                     dataKey="name"
                     height={28}
                     stroke="#0ea5e9"
                     fill="rgba(14, 165, 233, 0.05)"
                     travellerWidth={10}
                     onChange={handleBrushChange}
+                    startIndex={brushRange?.startIndex}
+                    endIndex={brushRange?.endIndex}
                   />
                 )}
               </LineChart>
