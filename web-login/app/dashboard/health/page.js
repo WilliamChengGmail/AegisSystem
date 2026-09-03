@@ -155,12 +155,80 @@ function filterByRange(allData, range, customStart, customEnd) {
 }
 
 /**
- * 從分組資料建立圖表用的「每日平均」陣列（舊→新排序）。
- * 自動填補缺失日期（值為 null），使折線圖出現斷點以標示缺少量測。
+ * 將原始量測資料依時間排序後，依據「兩分鐘內」規則分批。
+ * 回傳: [[row, row, ...], [row, ...], ...]
  */
-function buildChartData(grouped) {
+function groupIntoBatches(rows) {
+  if (rows.length === 0) return [];
+  // 依時間由舊到新排序
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+  const batches = [[sorted[0]]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = parseLocalDate(sorted[i - 1].date);
+    const curr = parseLocalDate(sorted[i].date);
+    const diffMs = Math.abs(curr - prev);
+    if (diffMs <= 120000) { // 2 分鐘 = 120,000 毫秒
+      batches[batches.length - 1].push(sorted[i]);
+    } else {
+      batches.push([sorted[i]]);
+    }
+  }
+  return batches;
+}
+
+/**
+ * 對分批後的資料套用篩選條件。
+ * option: 'none' | 'first_two' | 'last_two' | 'highest_two_sys' | 'lowest_two_sys'
+ * 回傳: 過濾後的一維陣列。
+ */
+function applyBatchFilter(rows, option) {
+  if (option === 'none') return rows;
+  const batches = groupIntoBatches(rows);
+  const result = [];
+
+  batches.forEach(batch => {
+    if (batch.length <= 2) {
+      // 批次筆數不超過 2，全數保留
+      result.push(...batch);
+      return;
+    }
+
+    let picked;
+    switch (option) {
+      case 'first_two':
+        // 時間最早的 2 筆（batch 已由舊到新排序）
+        picked = batch.slice(0, 2);
+        break;
+      case 'last_two':
+        // 時間最晚的 2 筆
+        picked = batch.slice(-2);
+        break;
+      case 'highest_two_sys':
+        // 收縮壓最高的 2 筆
+        picked = [...batch].sort((a, b) => (b.sys ?? 0) - (a.sys ?? 0)).slice(0, 2);
+        break;
+      case 'lowest_two_sys':
+        // 收縮壓最低的 2 筆
+        picked = [...batch].sort((a, b) => (a.sys ?? 999) - (b.sys ?? 999)).slice(0, 2);
+        break;
+      default:
+        picked = batch;
+    }
+    result.push(...picked);
+  });
+
+  return result;
+}
+
+/**
+ * 從分組資料建立圖表用的「每日平均」陣列（舊→新排序）。
+ * ignoreMissing=false → 自動填補缺失日期（值為 null），使折線圖出現斷點以標示缺少量測。
+ * ignoreMissing=true  → 僅回傳有資料的日期，折線圖會自動連接。
+ */
+function buildChartData(grouped, ignoreMissing = false) {
   const sorted = [...grouped].reverse(); // 舊→新
-  if (sorted.length < 2) {
+  if (sorted.length < 2 || ignoreMissing) {
     return sorted.map(g => ({
       name: g.displayDate,
       logicalDate: g.logicalDate,
@@ -168,6 +236,7 @@ function buildChartData(grouped) {
       dia: g.allAvg.dia,
       pul: g.allAvg.pul,
       isMissing: false,
+      allRows: g.allRows || [],
     }));
   }
 
@@ -192,6 +261,7 @@ function buildChartData(grouped) {
         dia: g.allAvg.dia,
         pul: g.allAvg.pul,
         isMissing: false,
+        allRows: g.allRows || [],
       });
     } else {
       // 缺失日期：插入 null 值
@@ -203,6 +273,7 @@ function buildChartData(grouped) {
         dia: null,
         pul: null,
         isMissing: true,
+        allRows: [],
       });
     }
     current.setDate(current.getDate() + 1);
@@ -225,6 +296,11 @@ export default function HealthDashboard() {
   const [activeRange, setActiveRange] = useState('all');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+
+  // 進階篩選狀態
+  const [ignoreMissingDates, setIgnoreMissingDates] = useState(false);
+  const [batchFilterOption, setBatchFilterOption] = useState('none');
+  const [hideRecordDetails, setHideRecordDetails] = useState(false);
 
   // Brush 連動
   const [brushRange, setBrushRange] = useState(null);
@@ -259,10 +335,11 @@ export default function HealthDashboard() {
     })();
   }, [router]);
 
-  // ===== 前端篩選 =====
+  // ===== 前端篩選 (時間區間 + 連續資料批次過濾) =====
   const filteredData = useMemo(() => {
-    return filterByRange(allData, activeRange, customStart, customEnd);
-  }, [allData, activeRange, customStart, customEnd]);
+    const rangeFiltered = filterByRange(allData, activeRange, customStart, customEnd);
+    return applyBatchFilter(rangeFiltered, batchFilterOption);
+  }, [allData, activeRange, customStart, customEnd, batchFilterOption]);
 
   // ===== 分組 =====
   const grouped = useMemo(() => {
@@ -271,8 +348,8 @@ export default function HealthDashboard() {
 
   // ===== 圖表資料 (每日平均, 舊→新) =====
   const chartData = useMemo(() => {
-    return buildChartData(grouped);
-  }, [grouped]);
+    return buildChartData(grouped, ignoreMissingDates);
+  }, [grouped, ignoreMissingDates]);
 
   // ===== Brush 可見的表格分組 =====
   const visibleGrouped = useMemo(() => {
@@ -430,6 +507,42 @@ export default function HealthDashboard() {
         )}
       </div>
 
+      {/* 進階篩選列 */}
+      <div className="filter-bar">
+        <label className="filter-checkbox">
+          <input
+            type="checkbox"
+            checked={ignoreMissingDates}
+            onChange={(e) => setIgnoreMissingDates(e.target.checked)}
+          />
+          <span>圖表忽略空白日期</span>
+        </label>
+
+        <div className="filter-select-group">
+          <span className="filter-label">連續資料篩選：</span>
+          <select
+            className="filter-select"
+            value={batchFilterOption}
+            onChange={(e) => setBatchFilterOption(e.target.value)}
+          >
+            <option value="none">不篩選（顯示全部）</option>
+            <option value="first_two">取前兩筆</option>
+            <option value="last_two">取後兩筆</option>
+            <option value="highest_two_sys">取最高收縮壓兩筆</option>
+            <option value="lowest_two_sys">取最低收縮壓兩筆</option>
+          </select>
+        </div>
+
+        <label className="filter-checkbox">
+          <input
+            type="checkbox"
+            checked={hideRecordDetails}
+            onChange={(e) => setHideRecordDetails(e.target.checked)}
+          />
+          <span>隱藏表格明細</span>
+        </label>
+      </div>
+
       {loading ? (
         <div className="loading-box">
           <div className="spinner"></div>
@@ -465,17 +578,37 @@ export default function HealthDashboard() {
                   domain={['dataMin - 10', 'dataMax + 10']}
                 />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 8,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                    fontSize: 13,
-                  }}
-                  labelFormatter={(label) => `日期: ${label}`}
-                  formatter={(value, name) => {
-                    const nameMap = { sys: '收縮壓', dia: '舒張壓', pul: '心率' };
-                    return [value, nameMap[name] || name];
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload || payload.length === 0) return null;
+                    const dataPoint = payload[0]?.payload;
+                    const rows = dataPoint?.allRows || [];
+                    return (
+                      <div style={{
+                        backgroundColor: '#fff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 8,
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                        padding: '10px 14px',
+                        fontSize: 13,
+                        maxWidth: 320,
+                      }}>
+                        <p style={{ fontWeight: 600, marginBottom: 6, color: '#334155' }}>📅 {label}</p>
+                        <p style={{ margin: '2px 0', color: '#22c55e' }}>收縮壓(均): {dataPoint?.sys ?? '—'}</p>
+                        <p style={{ margin: '2px 0', color: '#8b5cf6' }}>舒張壓(均): {dataPoint?.dia ?? '—'}</p>
+                        <p style={{ margin: '2px 0', color: '#ef4444' }}>心率(均): {dataPoint?.pul ?? '—'}</p>
+                        {rows.length > 0 && (
+                          <>
+                            <hr style={{ margin: '6px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
+                            <p style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>量測明細 ({rows.length} 筆)：</p>
+                            {rows.map((r, i) => (
+                              <p key={i} style={{ margin: '1px 0', fontSize: 11, color: '#475569' }}>
+                                {fmtDate(r.date)} {fmtTime(r.date)} — {r.sys}/{r.dia} ❤️{r.pul}
+                              </p>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    );
                   }}
                 />
 
@@ -487,9 +620,9 @@ export default function HealthDashboard() {
                   </>
                 )}
 
-                <Line type="monotone" dataKey="sys" name="sys" stroke="#22c55e" strokeWidth={2.5} dot={{ r: 3, fill: '#22c55e' }} activeDot={{ r: 5 }} connectNulls={false} />
-                <Line type="monotone" dataKey="dia" name="dia" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }} connectNulls={false} />
-                <Line type="monotone" dataKey="pul" name="pul" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: '#ef4444' }} activeDot={{ r: 5 }} connectNulls={false} />
+                <Line type="monotone" dataKey="sys" name="sys" stroke="#22c55e" strokeWidth={2.5} dot={{ r: 3, fill: '#22c55e' }} activeDot={{ r: 5 }} connectNulls={ignoreMissingDates} />
+                <Line type="monotone" dataKey="dia" name="dia" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }} connectNulls={ignoreMissingDates} />
+                <Line type="monotone" dataKey="pul" name="pul" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: '#ef4444' }} activeDot={{ r: 5 }} connectNulls={ignoreMissingDates} />
 
                 {/* Brush 拖曳選擇器 */}
                 {chartData.length > 5 && (
@@ -537,7 +670,7 @@ export default function HealthDashboard() {
                 </div>
 
                 {/* 明細列 */}
-                {g.allRows.map((row, idx) => (
+                {!hideRecordDetails && g.allRows.map((row, idx) => (
                   <div key={`${row.date}-${idx}`} className={`record-row period-${row.period}`}>
                     <span className="record-period-icon">{periodIcon(row.period)}</span>
                     <span className="record-time">{fmtTime(row.date)}</span>
