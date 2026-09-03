@@ -420,22 +420,35 @@ export default function HealthDashboard() {
     return () => container.removeEventListener('wheel', handleWheel);
   }, [loading, filteredData.length]); // 確保在元件實際渲染後才綁定事件
 
-  // ===== 判斷超標 =====
-  const isWarning = useCallback((val, type) => {
-    if (!settings || val == null) return false;
+  // ===== 判斷高標與低標樣式 =====
+  const valStyle = useCallback((val, type) => {
+    if (!settings || val == null) return {};
+    let highLimit, lowLimit;
     switch (type) {
-      case 'sys': return val > settings.sys_high || val < settings.sys_low;
-      case 'dia': return val > settings.dia_high || val < settings.dia_low;
-      case 'pul': return val > settings.hr_high || val < settings.hr_low;
-      default: return false;
+      case 'sys':
+        highLimit = settings.sys_high;
+        lowLimit = settings.sys_low;
+        break;
+      case 'dia':
+        highLimit = settings.dia_high;
+        lowLimit = settings.dia_low;
+        break;
+      case 'pul':
+        highLimit = settings.hr_high;
+        lowLimit = settings.hr_low;
+        break;
+      default:
+        return {};
     }
-  }, [settings]);
 
-  const valStyle = useCallback((val, type) =>
-    isWarning(val, type)
-      ? { color: '#ef4444', fontWeight: 700 }
-      : {}
-  , [isWarning]);
+    if (val > highLimit) {
+      return { color: '#ef4444', fontWeight: 700 }; // 超標：紅色
+    }
+    if (val < lowLimit) {
+      return { color: '#3b82f6', fontWeight: 700 }; // 低標：藍色
+    }
+    return {};
+  }, [settings]);
 
   // ===== 時段 Emoji =====
   const periodIcon = (period) => {
