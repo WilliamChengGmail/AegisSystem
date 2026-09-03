@@ -642,8 +642,16 @@ export default function HealthDashboard() {
                             <hr style={{ margin: '6px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
                             <p style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>量測明細 ({rows.length} 筆)：</p>
                             {rows.map((r, i) => (
-                              <p key={i} style={{ margin: '1px 0', fontSize: 11, color: '#475569' }}>
-                                {fmtDate(r.date)} {fmtTime(r.date)} — {r.sys}/{r.dia} ❤️{r.pul}
+                              <p key={i} style={{ margin: '2px 0', fontSize: 11, color: '#475569', display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+                                <span style={{ color: '#94a3b8', marginRight: 2 }}>{fmtTime(r.date)}</span>
+                                <span style={{ color: '#cbd5e1' }}>—</span>
+                                <span style={{ color: '#64748b', fontSize: 10 }}>高</span>
+                                <span style={{ fontWeight: 600, ...valStyle(r.sys, 'sys') }}>{r.sys ?? '—'}</span>
+                                <span style={{ color: '#cbd5e1' }}>/</span>
+                                <span style={{ color: '#64748b', fontSize: 10 }}>低</span>
+                                <span style={{ fontWeight: 600, ...valStyle(r.dia, 'dia') }}>{r.dia ?? '—'}</span>
+                                <span style={{ color: '#cbd5e1' }}>❤️</span>
+                                <span style={{ fontWeight: 600, ...valStyle(r.pul, 'pul') }}>{r.pul ?? '—'}</span>
                               </p>
                             ))}
                           </>
@@ -661,9 +669,21 @@ export default function HealthDashboard() {
                   </>
                 )}
 
-                <Line type="monotone" dataKey="sys" name="sys" stroke="#22c55e" strokeWidth={2.5} dot={{ r: 3, fill: '#22c55e' }} activeDot={{ r: 5 }} connectNulls={ignoreMissingDates} />
-                <Line type="monotone" dataKey="dia" name="dia" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }} connectNulls={ignoreMissingDates} />
-                <Line type="monotone" dataKey="pul" name="pul" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: '#ef4444' }} activeDot={{ r: 5 }} connectNulls={ignoreMissingDates} />
+                {/* 半年(含)以上時縮小節點，避免資料密集時遮蔽曲線 */}
+                {(() => {
+                  const isLargeRange = ['180', '365', 'all'].includes(activeRange);
+                  const dotR = isLargeRange ? 1.2 : 3;
+                  const activeR = isLargeRange ? 4 : 5;
+                  const sysW = isLargeRange ? 1.8 : 2.5;
+                  const lineW = isLargeRange ? 1.5 : 2;
+                  return (
+                    <>
+                      <Line type="monotone" dataKey="sys" name="sys" stroke="#22c55e" strokeWidth={sysW} dot={{ r: dotR, fill: '#22c55e' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
+                      <Line type="monotone" dataKey="dia" name="dia" stroke="#8b5cf6" strokeWidth={lineW} dot={{ r: dotR, fill: '#8b5cf6' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
+                      <Line type="monotone" dataKey="pul" name="pul" stroke="#ef4444" strokeWidth={lineW} dot={{ r: dotR, fill: '#ef4444' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
+                    </>
+                  );
+                })()}
 
                 {/* Brush 拖曳選擇器 */}
                 {chartData.length > 5 && (
