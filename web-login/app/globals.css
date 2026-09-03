@@ -584,18 +584,192 @@ body {
 /* ====================== */
 /* RWD 手機版適配          */
 /* ====================== */
+
+/* --- 平板 (≤768px) --- */
+@media (max-width: 768px) {
+  .filter-bar {
+    gap: 10px;
+    padding: 8px 10px;
+  }
+  .filter-select-group {
+    flex-wrap: wrap;
+  }
+  .date-header-allavg { font-size: 1.15rem; }
+  .record-val { font-size: 1.15rem; }
+}
+
+/* --- 手機 (≤480px) --- */
 @media (max-width: 480px) {
+  /* 登入卡片 */
   .glass-card { padding: 1.5rem; }
-  .range-bar { gap: 4px; padding: 8px 8px; }
-  .range-btn { padding: 5px 10px; font-size: 0.78rem; }
-  .chart-container { margin: 6px 8px; padding: 8px 4px 4px 4px; }
-  .data-table-wrapper { padding: 0 8px 8px; }
-  .date-header-row { padding: 8px 10px; }
-  .date-header-allavg { font-size: 1.1rem; }
-  .period-avg-badge { font-size: 0.75rem; padding: 2px 6px; }
-  .record-row { padding: 8px 10px; gap: 8px; }
-  .record-val { font-size: 1.1rem; }
+
+  /* 頁面標頭 */
+  .health-header {
+    padding: 10px 12px;
+  }
+  .health-header h1 {
+    font-size: 0.95rem;
+  }
+  .btn-back {
+    font-size: 0.8rem;
+    padding: 3px 6px;
+  }
+
+  /* 時間區間選擇列 — 自動換行 */
+  .range-bar {
+    gap: 4px;
+    padding: 8px 8px;
+    flex-wrap: wrap;
+  }
+  .range-btn {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+    border-radius: 16px;
+  }
+
+  /* 進階篩選列 — 垂直堆疊 */
+  .filter-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .filter-checkbox {
+    font-size: 0.78rem;
+  }
+  .filter-checkbox input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+  }
+  .filter-select-group {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .filter-select {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.78rem;
+  }
+  .filter-label {
+    font-size: 0.78rem;
+  }
+
+  /* 圖表容器 — 縮減邊距，高度微縮 */
+  .chart-container {
+    margin: 6px 6px;
+    padding: 8px 2px 4px 2px;
+    border-radius: 10px;
+  }
+  .chart-legend {
+    gap: 10px;
+    padding: 0 4px 6px;
+  }
+  .legend-item {
+    font-size: 0.7rem;
+    gap: 4px;
+  }
+  .legend-item::before {
+    width: 8px;
+    height: 8px;
+  }
+
+  /* 資料表格 */
+  .data-table-wrapper {
+    padding: 0 6px 8px;
+  }
+
+  /* 日期標題列 — 更緊湊 */
+  .date-header-row {
+    padding: 8px 10px;
+    border-radius: 8px 8px 0 0;
+  }
+  .date-header-top {
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 5px;
+  }
+  .date-badge {
+    font-size: 0.78rem;
+    padding: 2px 8px;
+  }
+  .date-header-allavg {
+    font-size: 1rem;
+    gap: 2px;
+  }
+  .allavg-label {
+    font-size: 0.65rem;
+  }
+
+  /* 時段平均 — 更小的標籤 */
+  .date-header-periods {
+    gap: 6px;
+  }
+  .period-avg-badge {
+    font-size: 0.72rem;
+    padding: 2px 6px;
+    gap: 2px;
+  }
+  .period-avg-icon {
+    font-size: 0.65rem;
+  }
+  .avg-sep {
+    font-size: 0.78rem;
+  }
+  .avg-heart {
+    font-size: 0.72rem;
+    margin-left: 2px;
+  }
+
+  /* 明細紀錄列 — 兩行式排列 */
+  .record-row {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 4px 8px;
+  }
+  .record-period-icon {
+    font-size: 0.78rem;
+    width: 18px;
+  }
+  .record-time {
+    font-size: 0.78rem;
+    min-width: 38px;
+  }
+  .record-val {
+    font-size: 1.05rem;
+  }
+  .record-sep {
+    font-size: 0.8rem;
+  }
+  .record-heart {
+    font-size: 0.78rem;
+  }
+  .metric-label {
+    font-size: 0.68rem;
+  }
+
+  /* Dashboard 功能卡片 */
   .feature-card { padding: 1rem; }
+  .feature-icon { font-size: 1.6rem; }
+  .feature-info h3 { font-size: 0.95rem; }
+  .feature-info p { font-size: 0.75rem; }
+}
+
+/* --- 極小螢幕 (≤360px) --- */
+@media (max-width: 360px) {
+  .range-btn {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+  }
+  .date-header-allavg {
+    font-size: 0.9rem;
+  }
+  .record-val {
+    font-size: 0.95rem;
+  }
+  .period-avg-badge {
+    font-size: 0.68rem;
+    padding: 2px 4px;
+  }
 }
 
 .metric-label { font-size: 0.75rem; color: #64748b; font-weight: 500; }

@@ -315,6 +315,16 @@ export default function HealthDashboard() {
   const chartContainerRef = useRef(null);
   const zoomStateRef = useRef({ len: 0, range: null });
 
+  // 手機版螢幕偵測 (<=768px)
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   // ===== 資料讀取 (僅一次) =====
   useEffect(() => {
     const user = sessionStorage.getItem('username');
@@ -354,18 +364,22 @@ export default function HealthDashboard() {
     return sysAbnormal || diaAbnormal || pulAbnormal;
   }, [settings]);
 
-  // ===== 分組 (可套用「僅顯示含異常紀錄之日期」) =====
+  // ===== 分組 (原始無異常篩選，供給圖表使用) =====
+  const rawGrouped = useMemo(() => {
+    return groupByLogicalDate(filteredData);
+  }, [filteredData]);
+
+  // ===== 表格用分組 (套用「僅顯示含異常紀錄之日期」) =====
   const grouped = useMemo(() => {
-    const rawGrouped = groupByLogicalDate(filteredData);
     if (!onlyAbnormalDays) return rawGrouped;
     // 篩選出該邏輯日期中，至少有一筆紀錄屬於異常的日期
     return rawGrouped.filter(g => g.allRows && g.allRows.some(r => isRowAbnormal(r)));
-  }, [filteredData, onlyAbnormalDays, isRowAbnormal]);
+  }, [rawGrouped, onlyAbnormalDays, isRowAbnormal]);
 
-  // ===== 圖表資料 (每日平均, 舊→新) =====
+  // ===== 圖表資料 (每日平均, 舊→新，不套用異常篩選) =====
   const chartData = useMemo(() => {
-    return buildChartData(grouped, ignoreMissingDates);
-  }, [grouped, ignoreMissingDates]);
+    return buildChartData(rawGrouped, ignoreMissingDates);
+  }, [rawGrouped, ignoreMissingDates]);
 
   // ===== Brush 可見的表格分組 =====
   const visibleGrouped = useMemo(() => {
@@ -669,9 +683,10 @@ export default function HealthDashboard() {
                   </>
                 )}
 
-                {/* 半年(含)以上時縮小節點，避免資料密集時遮蔽曲線 */}
+                {/* 密集時間區間（桌機: 半年含以上 / 手機: 三月含以上）縮小節點，避免遮蔽曲線 */}
                 {(() => {
-                  const isLargeRange = ['180', '365', 'all'].includes(activeRange);
+                  const targetRanges = isMobile ? ['90', '180', '365', 'all'] : ['180', '365', 'all'];
+                  const isLargeRange = targetRanges.includes(activeRange);
                   const dotR = isLargeRange ? 1.2 : 3;
                   const activeR = isLargeRange ? 4 : 5;
                   const sysW = isLargeRange ? 1.8 : 2.5;
