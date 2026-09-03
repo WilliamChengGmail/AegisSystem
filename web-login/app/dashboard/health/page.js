@@ -301,6 +301,7 @@ export default function HealthDashboard() {
   const [ignoreMissingDates, setIgnoreMissingDates] = useState(false);
   const [batchFilterOption, setBatchFilterOption] = useState('none');
   const [hideRecordDetails, setHideRecordDetails] = useState(false);
+  const [onlyAbnormalDays, setOnlyAbnormalDays] = useState(false);
 
   // Brush 連動
   const [brushRange, setBrushRange] = useState(null);
@@ -341,10 +342,25 @@ export default function HealthDashboard() {
     return applyBatchFilter(rangeFiltered, batchFilterOption);
   }, [allData, activeRange, customStart, customEnd, batchFilterOption]);
 
-  // ===== 分組 =====
+  // ===== 判斷單筆紀錄是否異常 (高標或低標) =====
+  const isRowAbnormal = useCallback((row) => {
+    if (!settings || !row) return false;
+    const sys = Number(row.sys);
+    const dia = Number(row.dia);
+    const pul = Number(row.pul);
+    const sysAbnormal = !isNaN(sys) && (sys > Number(settings.sys_high) || sys < Number(settings.sys_low));
+    const diaAbnormal = !isNaN(dia) && (dia > Number(settings.dia_high) || dia < Number(settings.dia_low));
+    const pulAbnormal = !isNaN(pul) && (pul > Number(settings.hr_high) || pul < Number(settings.hr_low));
+    return sysAbnormal || diaAbnormal || pulAbnormal;
+  }, [settings]);
+
+  // ===== 分組 (可套用「僅顯示含異常紀錄之日期」) =====
   const grouped = useMemo(() => {
-    return groupByLogicalDate(filteredData);
-  }, [filteredData]);
+    const rawGrouped = groupByLogicalDate(filteredData);
+    if (!onlyAbnormalDays) return rawGrouped;
+    // 篩選出該邏輯日期中，至少有一筆紀錄屬於異常的日期
+    return rawGrouped.filter(g => g.allRows && g.allRows.some(r => isRowAbnormal(r)));
+  }, [filteredData, onlyAbnormalDays, isRowAbnormal]);
 
   // ===== 圖表資料 (每日平均, 舊→新) =====
   const chartData = useMemo(() => {
@@ -424,27 +440,30 @@ export default function HealthDashboard() {
   const valStyle = useCallback((val, type) => {
     if (!settings || val == null) return {};
     let highLimit, lowLimit;
+    const numVal = Number(val);
+    if (isNaN(numVal)) return {};
+    
     switch (type) {
       case 'sys':
-        highLimit = settings.sys_high;
-        lowLimit = settings.sys_low;
+        highLimit = Number(settings.sys_high);
+        lowLimit = Number(settings.sys_low);
         break;
       case 'dia':
-        highLimit = settings.dia_high;
-        lowLimit = settings.dia_low;
+        highLimit = Number(settings.dia_high);
+        lowLimit = Number(settings.dia_low);
         break;
       case 'pul':
-        highLimit = settings.hr_high;
-        lowLimit = settings.hr_low;
+        highLimit = Number(settings.hr_high);
+        lowLimit = Number(settings.hr_low);
         break;
       default:
         return {};
     }
 
-    if (val > highLimit) {
+    if (numVal > highLimit) {
       return { color: '#ef4444', fontWeight: 700 }; // 超標：紅色
     }
-    if (val < lowLimit) {
+    if (numVal < lowLimit) {
       return { color: '#3b82f6', fontWeight: 700 }; // 低標：藍色
     }
     return {};
@@ -553,6 +572,15 @@ export default function HealthDashboard() {
             onChange={(e) => setHideRecordDetails(e.target.checked)}
           />
           <span>隱藏表格明細</span>
+        </label>
+
+        <label className="filter-checkbox" style={{ color: '#ef4444', fontWeight: 600 }}>
+          <input
+            type="checkbox"
+            checked={onlyAbnormalDays}
+            onChange={(e) => setOnlyAbnormalDays(e.target.checked)}
+          />
+          <span>僅顯示包含異常紀錄之日期</span>
         </label>
       </div>
 
