@@ -45,6 +45,7 @@ export async function POST(request) {
         isGuest: true,
         message: '以訪客身份登入成功',
         username: 'guest',
+        role: 'guests',
         targetUser: Array.isArray(visibleUsers) && visibleUsers.length > 0 ? visibleUsers[0] : 'cvn',
         visibleUsers: Array.isArray(visibleUsers) ? visibleUsers : ['cvn']
       });
@@ -73,7 +74,12 @@ export async function POST(request) {
       return NextResponse.json({ error: '無效的帳號或密碼' }, { status: 401 });
     }
 
-    return NextResponse.json({ success: true, message: '登入成功' });
+    return NextResponse.json({ 
+      success: true, 
+      message: '登入成功',
+      id: user.id,
+      role: user.role || 'users'
+    });
 
   } catch (error) {
     console.error('Login Error:', error);

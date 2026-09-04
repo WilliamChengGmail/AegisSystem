@@ -51,10 +51,18 @@ export default function DashboardIndex() {
     },
     {
       icon: '⚙️',
-      title: '設定與匯入',
-      desc: isGuest ? '🔒 訪客體驗模式不開放此功能' : '設定高低標範圍 / 上傳備份檔案',
+      title: '設定、匯入與匯出',
+      desc: isGuest ? '🔒 訪客體驗模式不開放此功能' : '設定高低標範圍 / 上傳與下載資料',
       path: '/dashboard/settings',
       color: isGuest ? 'linear-gradient(135deg, #94a3b8, #cbd5e1)' : 'linear-gradient(135deg, #6c5ce7, #a29bfe)',
+      disabled: isGuest,
+    },
+    {
+      icon: '🕒',
+      title: '匯入/匯出歷程',
+      desc: isGuest ? '🔒 訪客體驗模式不開放此功能' : '查詢資料匯入、匯出與更新的歷史紀錄',
+      path: '/dashboard/history',
+      color: isGuest ? 'linear-gradient(135deg, #94a3b8, #cbd5e1)' : 'linear-gradient(135deg, #0ea5e9, #0284c7)',
       disabled: isGuest,
     },
   ];

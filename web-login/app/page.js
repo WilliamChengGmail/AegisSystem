@@ -45,6 +45,8 @@ export default function LoginPage() {
       if (res.ok) {
         sessionStorage.setItem('isAuthenticated', 'true');
         sessionStorage.setItem('username', username);
+        sessionStorage.setItem('userId', data.id);
+        sessionStorage.setItem('role', data.role);
         sessionStorage.removeItem('isGuest');
         router.push('/dashboard');
       } else {
@@ -74,6 +76,7 @@ export default function LoginPage() {
       if (res.ok && data.isGuest) {
         sessionStorage.setItem('isAuthenticated', 'true');
         sessionStorage.setItem('username', 'guest');
+        sessionStorage.setItem('role', 'guests');
         sessionStorage.setItem('isGuest', 'true');
         sessionStorage.setItem('targetUser', data.targetUser || 'cvn');
         if (data.visibleUsers) {

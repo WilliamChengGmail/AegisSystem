@@ -401,22 +401,45 @@ export default function HealthDashboard() {
   }, []);
 
   const [isGuest, setIsGuest] = useState(false);
+  const [username, setUsername] = useState('');
   const [targetUser, setTargetUser] = useState('');
+  const [userRole, setUserRole] = useState('users');
+  const [usersList, setUsersList] = useState([]);
 
-  // ===== 資料讀取 (僅一次) =====
+  // ===== 初始設定 =====
   useEffect(() => {
     document.title = '血壓心跳紀錄 - Aegis System';
     const user = sessionStorage.getItem('username');
     const guestState = sessionStorage.getItem('isGuest') === 'true';
-    const target = sessionStorage.getItem('targetUser') || 'cvn';
+    const role = sessionStorage.getItem('role') || 'users';
     
     if (!user) { router.push('/'); return; }
+    
+    setUsername(user);
     setIsGuest(guestState);
-    setTargetUser(target);
+    setUserRole(role);
+
+    let initialTarget = user;
+    if (guestState) {
+      initialTarget = sessionStorage.getItem('targetUser') || 'cvn';
+    } else if (role === 'admins') {
+      initialTarget = sessionStorage.getItem('viewTargetUser') || user;
+      fetch('/api/admin/users').then(res => res.json()).then(data => {
+        if (data.users) setUsersList(data.users);
+      });
+    }
+    
+    setTargetUser(initialTarget);
+  }, [router]);
+
+  // ===== 資料讀取 (依賴 targetUser) =====
+  useEffect(() => {
+    if (!targetUser || !username) return;
+    setLoading(true);
 
     (async () => {
       try {
-        const url = guestState ? `/api/health?username=guest&targetUser=${target}` : `/api/health?username=${user}`;
+        const url = `/api/health?requester=${username}&target=${targetUser}`;
         const res = await fetch(url);
         const json = await res.json();
         if (json.data) {
@@ -429,7 +452,7 @@ export default function HealthDashboard() {
         setLoading(false);
       }
     })();
-  }, [router]);
+  }, [targetUser, isGuest]);
 
   // ===== 前端篩選 (時間區間 + 連續資料批次過濾) =====
   const filteredData = useMemo(() => {
@@ -631,6 +654,25 @@ export default function HealthDashboard() {
             }}>
               👤 訪客體驗模式 ({targetUser})
             </span>
+          )}
+          {userRole === 'admins' && (
+            <select
+              value={targetUser}
+              onChange={(e) => {
+                setTargetUser(e.target.value);
+                sessionStorage.setItem('viewTargetUser', e.target.value);
+              }}
+              style={{
+                marginLeft: '8px', padding: '4px 8px', borderRadius: '6px', 
+                border: '1.5px solid #0ea5e9', outline: 'none', 
+                fontSize: '0.85rem', color: '#0369a1', fontWeight: 600,
+                background: '#f0f9ff'
+              }}
+            >
+              {usersList.map(u => (
+                <option key={u.id} value={u.username}>{u.username} {u.role === 'admins' ? '(管理員)' : ''}</option>
+              ))}
+            </select>
           )}
         </div>
         <div style={{ width: 60 }}></div>
