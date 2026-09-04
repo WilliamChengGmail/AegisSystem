@@ -31,6 +31,7 @@ const BP_PRESETS = [
 export default function SettingsPage() {
   const router = useRouter();
   const [username, setUsername] = useState('');
+  const [isGuest, setIsGuest] = useState(false);
   const [settings, setSettings] = useState({
     sys_high: 140, sys_low: 90,
     dia_high: 90,  dia_low: 60,
@@ -43,15 +44,25 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const user = sessionStorage.getItem('username');
+    const guestState = sessionStorage.getItem('isGuest') === 'true';
     if (!user) { router.push('/'); return; }
     setUsername(user);
+    setIsGuest(guestState);
 
-    fetch(`/api/settings?username=${user}`)
+    if (guestState) {
+      setMessage({
+        type: 'error',
+        text: '🔒 訪客體驗模式僅開放查看血壓心跳資料，無法使用設定與匯入功能。'
+      });
+    }
+
+    const target = guestState ? (sessionStorage.getItem('targetUser') || 'cvn') : user;
+
+    fetch(`/api/settings?username=${target}`)
       .then(res => res.json())
       .then(data => {
         if (data.settings) {
           setSettings(data.settings);
-          // 根據讀取值自動對應預設
           detectPreset(data.settings);
         }
       })
@@ -68,13 +79,15 @@ export default function SettingsPage() {
   }
 
   const handleChange = (e) => {
+    if (isGuest) return;
     const { name, value } = e.target;
     setSettings(prev => ({ ...prev, [name]: parseInt(value) || 0 }));
-    setActivePreset('custom'); // 手動修改後切換為自訂
+    setActivePreset('custom');
   };
 
   /** 點擊快速預設按鈕 */
   const applyPreset = (preset) => {
+    if (isGuest) return;
     setActivePreset(preset.id);
     if (preset.id !== 'custom') {
       setSettings(prev => ({
@@ -83,13 +96,16 @@ export default function SettingsPage() {
         sys_low:  preset.sys_low,
         dia_high: preset.dia_high,
         dia_low:  preset.dia_low,
-        // hr_high / hr_low 維持不變，由使用者手動設定
       }));
     }
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (isGuest) {
+      setMessage({ type: 'error', text: '🔒 訪客體驗模式無法儲存設定！' });
+      return;
+    }
     setSaving(true);
     setMessage({ type: '', text: '' });
     try {
@@ -106,6 +122,10 @@ export default function SettingsPage() {
   };
 
   const handleFileUpload = async (e) => {
+    if (isGuest) {
+      setMessage({ type: 'error', text: '🔒 訪客體驗模式無法匯入檔案！' });
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
     setUploading(true);
@@ -125,7 +145,7 @@ export default function SettingsPage() {
     finally { setUploading(false); }
   };
 
-  // 血壓欄位（由預設快速填入，也可手動覆蓋）
+  // 血壓欄位
   const bpFields = [
     { label: '收縮壓 高標 (mmHg)', name: 'sys_high', color: '#22c55e' },
     { label: '收縮壓 低標 (mmHg)', name: 'sys_low',  color: '#22c55e' },
@@ -133,7 +153,7 @@ export default function SettingsPage() {
     { label: '舒張壓 低標 (mmHg)', name: 'dia_low',  color: '#8b5cf6' },
   ];
 
-  // 心跳欄位（純手動）
+  // 心跳欄位
   const hrFields = [
     { label: '心跳 高標 (bpm)', name: 'hr_high', color: '#ef4444' },
     { label: '心跳 低標 (bpm)', name: 'hr_low',  color: '#ef4444' },
@@ -142,16 +162,34 @@ export default function SettingsPage() {
   const inputStyle = (color) => ({
     padding: '8px 12px', borderRadius: 8,
     border: '1px solid #e2e8f0', fontSize: '1rem',
-    fontWeight: 600, color: '#1e293b',
+    fontWeight: 600, color: isGuest ? '#94a3b8' : '#1e293b',
+    background: isGuest ? '#f1f5f9' : '#fff',
     outline: 'none', transition: 'border-color 0.2s',
     width: '100%', boxSizing: 'border-box',
+    cursor: isGuest ? 'not-allowed' : 'text',
   });
 
   return (
     <div className="health-page">
       <header className="health-header">
-        <button className="btn-back" onClick={() => router.push('/dashboard')}>← 返回</button>
-        <h1>設定與匯入</h1>
+        <button className="btn-back" onClick={() => router.push(isGuest ? '/dashboard/health' : '/dashboard')}>
+          ← {isGuest ? '前往血壓心跳' : '返回'}
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h1>設定與匯入</h1>
+          {isGuest && (
+            <span style={{
+              background: '#fee2e2',
+              color: '#dc2626',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              padding: '2px 8px',
+              borderRadius: '12px'
+            }}>
+              🔒 訪客模式 (唯讀)
+            </span>
+          )}
+        </div>
         <div style={{ width: 60 }}></div>
       </header>
 
@@ -159,19 +197,32 @@ export default function SettingsPage() {
         {/* 訊息 */}
         {message.text && (
           <div style={{
-            padding: '10px 14px', borderRadius: 10, marginBottom: 12,
+            padding: '12px 16px', borderRadius: 10, marginBottom: 16,
             background: message.type === 'success' ? '#dcfce7' : '#fee2e2',
             color: message.type === 'success' ? '#166534' : '#991b1b',
-            fontSize: '0.9rem', fontWeight: 500,
+            fontSize: '0.9rem', fontWeight: 600,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8
           }}>
-            {message.text}
+            <span>{message.text}</span>
+            {isGuest && (
+              <button
+                onClick={() => router.push('/dashboard/health')}
+                style={{
+                  background: '#dc2626', color: '#fff', border: 'none',
+                  padding: '4px 10px', borderRadius: 6, fontSize: '0.8rem',
+                  fontWeight: 600, cursor: 'pointer'
+                }}
+              >
+                前往血壓心跳資料 ›
+              </button>
+            )}
           </div>
         )}
 
         {/* 高低標設定 */}
-        <div style={{ background: '#fff', borderRadius: 12, padding: '16px', marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: '16px', marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', opacity: isGuest ? 0.75 : 1 }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1e293b', marginBottom: 12 }}>
-            🎯 高低標範圍設定
+            🎯 高低標範圍設定 {isGuest && <span style={{ fontSize: '0.8rem', color: '#dc2626' }}>(🔒 訪客不可修改)</span>}
           </h2>
 
           {/* ── 血壓快速預設 ── */}
@@ -184,6 +235,7 @@ export default function SettingsPage() {
                 <button
                   key={p.id}
                   type="button"
+                  disabled={isGuest}
                   onClick={() => applyPreset(p)}
                   style={{
                     padding: '8px 14px',
@@ -193,7 +245,7 @@ export default function SettingsPage() {
                     color: activePreset === p.id ? '#0369a1' : '#475569',
                     fontWeight: activePreset === p.id ? 700 : 500,
                     fontSize: '0.82rem',
-                    cursor: 'pointer',
+                    cursor: isGuest ? 'not-allowed' : 'pointer',
                     transition: 'all 0.18s',
                     textAlign: 'left',
                     lineHeight: 1.5,
@@ -220,16 +272,16 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number" name={f.name} value={settings[f.name]}
-                    onChange={handleChange} required
+                    onChange={handleChange} required disabled={isGuest}
                     style={inputStyle(f.color)}
-                    onFocus={e => e.target.style.borderColor = f.color}
-                    onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                    onFocus={e => !isGuest && (e.target.style.borderColor = f.color)}
+                    onBlur={e => !isGuest && (e.target.style.borderColor = '#e2e8f0')}
                   />
                 </div>
               ))}
             </div>
 
-            {/* ── 心跳數值（手動） ── */}
+            {/* ── 心跳數值 ── */}
             <p style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 500, marginBottom: 8 }}>
               心跳數值（因人而異，請手動設定）
             </p>
@@ -242,48 +294,52 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number" name={f.name} value={settings[f.name]}
-                    onChange={handleChange} required
+                    onChange={handleChange} required disabled={isGuest}
                     style={inputStyle(f.color)}
-                    onFocus={e => e.target.style.borderColor = f.color}
-                    onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                    onFocus={e => !isGuest && (e.target.style.borderColor = f.color)}
+                    onBlur={e => !isGuest && (e.target.style.borderColor = '#e2e8f0')}
                   />
                 </div>
               ))}
             </div>
 
-            <button type="submit" disabled={saving} style={{
+            <button type="submit" disabled={saving || isGuest} style={{
               width: '100%', padding: '10px',
-              background: '#0ea5e9', color: '#fff', border: 'none',
+              background: isGuest ? '#cbd5e1' : '#0ea5e9',
+              color: isGuest ? '#64748b' : '#fff',
+              border: 'none',
               borderRadius: 8, fontWeight: 600, fontSize: '0.95rem',
-              cursor: 'pointer',
+              cursor: isGuest ? 'not-allowed' : 'pointer',
             }}>
-              {saving ? '儲存中...' : '💾 儲存設定'}
+              {isGuest ? '🔒 訪客模式禁止變更設定' : saving ? '儲存中...' : '💾 儲存設定'}
             </button>
           </form>
         </div>
 
         {/* 資料匯入 */}
-        <div style={{ background: '#fff', borderRadius: 12, padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', opacity: isGuest ? 0.75 : 1 }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1e293b', marginBottom: 8 }}>
-            📤 資料匯入
+            📤 資料匯入 {isGuest && <span style={{ fontSize: '0.8rem', color: '#dc2626' }}>(🔒 訪客不可匯入)</span>}
           </h2>
           <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: 12 }}>
             上傳 .bp 或 .db 備份檔，系統將自動解析並將血壓心跳數據匯入至雲端資料庫。
           </p>
           <div style={{ position: 'relative', overflow: 'hidden' }}>
-            <button disabled={uploading} style={{
+            <button disabled={uploading || isGuest} style={{
               width: '100%', padding: '14px',
-              background: '#f8fafc', border: '2px dashed #cbd5e1',
-              borderRadius: 10, color: '#64748b',
-              fontWeight: 500, fontSize: '0.9rem', cursor: 'pointer',
+              background: isGuest ? '#f1f5f9' : '#f8fafc',
+              border: isGuest ? '2px dashed #cbd5e1' : '2px dashed #0ea5e9',
+              borderRadius: 10, color: isGuest ? '#94a3b8' : '#0369a1',
+              fontWeight: 500, fontSize: '0.9rem',
+              cursor: isGuest ? 'not-allowed' : 'pointer',
               transition: 'all 0.2s',
             }}>
-              {uploading ? '⏳ 解析匯入中...' : '📁 點擊選擇檔案 (.bp / .db)'}
+              {isGuest ? '🔒 訪客體驗模式不開放檔案匯入' : uploading ? '⏳ 解析匯入中...' : '📁 點擊選擇檔案 (.bp / .db)'}
             </button>
             <input
               type="file" accept=".bp,.db"
-              onChange={handleFileUpload} disabled={uploading}
-              style={{ position: 'absolute', left: 0, top: 0, opacity: 0, cursor: 'pointer', height: '100%', width: '100%' }}
+              onChange={handleFileUpload} disabled={uploading || isGuest}
+              style={{ position: 'absolute', left: 0, top: 0, opacity: 0, cursor: isGuest ? 'not-allowed' : 'pointer', height: '100%', width: '100%' }}
             />
           </div>
         </div>

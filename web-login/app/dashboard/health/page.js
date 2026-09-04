@@ -282,6 +282,72 @@ function buildChartData(grouped, ignoreMissing = false) {
   return result;
 }
 
+/**
+ * 建立異常分析模式的圖表資料。
+ * 僅保留含異常紀錄的日期，並輸出全日均 / 早上 / 午間 / 晚上四組平均值。
+ */
+function buildAbnormalChartData(grouped, ignoreMissing, isRowAbnormalFn) {
+  const abnormalGrouped = grouped.filter(g =>
+    g.allRows && g.allRows.some(r => isRowAbnormalFn(r))
+  );
+
+  const sorted = [...abnormalGrouped].reverse(); // 舊→新
+
+  const mapEntry = (g) => ({
+    name: g.displayDate,
+    logicalDate: g.logicalDate,
+    sys: g.allAvg.sys,
+    dia: g.allAvg.dia,
+    pul: g.allAvg.pul,
+    morningSys: g.morningAvg?.sys ?? null,
+    morningDia: g.morningAvg?.dia ?? null,
+    morningPul: g.morningAvg?.pul ?? null,
+    afternoonSys: g.afternoonAvg?.sys ?? null,
+    afternoonDia: g.afternoonAvg?.dia ?? null,
+    afternoonPul: g.afternoonAvg?.pul ?? null,
+    eveningSys: g.eveningAvg?.sys ?? null,
+    eveningDia: g.eveningAvg?.dia ?? null,
+    eveningPul: g.eveningAvg?.pul ?? null,
+    isMissing: false,
+    allRows: g.allRows || [],
+  });
+
+  if (sorted.length < 2 || ignoreMissing) {
+    return sorted.map(mapEntry);
+  }
+
+  // 填補缺失日期（在異常日期之間的空白日期）
+  const result = [];
+  const startDate = parseLocalDate(sorted[0].logicalDate + ' 00:00:00');
+  const endDate = parseLocalDate(sorted[sorted.length - 1].logicalDate + ' 00:00:00');
+
+  const dataMap = {};
+  sorted.forEach(g => { dataMap[g.logicalDate] = g; });
+
+  const current = new Date(startDate);
+  while (current <= endDate) {
+    const key = fmtISO(current);
+    if (dataMap[key]) {
+      result.push(mapEntry(dataMap[key]));
+    } else {
+      const displayDate = key.replace(/-/g, '/');
+      result.push({
+        name: displayDate,
+        logicalDate: key,
+        sys: null, dia: null, pul: null,
+        morningSys: null, morningDia: null, morningPul: null,
+        afternoonSys: null, afternoonDia: null, afternoonPul: null,
+        eveningSys: null, eveningDia: null, eveningPul: null,
+        isMissing: true,
+        allRows: [],
+      });
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return result;
+}
+
 // ========== 主元件 ==========
 
 export default function HealthDashboard() {
@@ -302,6 +368,12 @@ export default function HealthDashboard() {
   const [batchFilterOption, setBatchFilterOption] = useState('none');
   const [hideRecordDetails, setHideRecordDetails] = useState(false);
   const [onlyAbnormalDays, setOnlyAbnormalDays] = useState(false);
+  const [hideChart, setHideChart] = useState(false);
+  const [abnormalAnalysis, setAbnormalAnalysis] = useState(false);
+  const [abnormalLineVisibility, setAbnormalLineVisibility] = useState({
+    allDay: true, morning: true, afternoon: true, evening: true,
+  });
+  const [savedHideRecordDetails, setSavedHideRecordDetails] = useState(false);
 
   // Brush 連動
   const [brushRange, setBrushRange] = useState(null);
@@ -325,14 +397,24 @@ export default function HealthDashboard() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  const [isGuest, setIsGuest] = useState(false);
+  const [targetUser, setTargetUser] = useState('');
+
   // ===== 資料讀取 (僅一次) =====
   useEffect(() => {
+    document.title = '血壓心跳紀錄 - Aegis System';
     const user = sessionStorage.getItem('username');
+    const guestState = sessionStorage.getItem('isGuest') === 'true';
+    const target = sessionStorage.getItem('targetUser') || 'cvn';
+    
     if (!user) { router.push('/'); return; }
+    setIsGuest(guestState);
+    setTargetUser(target);
 
     (async () => {
       try {
-        const res = await fetch(`/api/health?username=${user}`);
+        const url = guestState ? `/api/health?username=guest&targetUser=${target}` : `/api/health?username=${user}`;
+        const res = await fetch(url);
         const json = await res.json();
         if (json.data) {
           setAllData(json.data);
@@ -381,6 +463,15 @@ export default function HealthDashboard() {
     return buildChartData(rawGrouped, ignoreMissingDates);
   }, [rawGrouped, ignoreMissingDates]);
 
+  // ===== 異常分析圖表資料 =====
+  const abnormalChartData = useMemo(() => {
+    if (!abnormalAnalysis) return [];
+    return buildAbnormalChartData(rawGrouped, ignoreMissingDates, isRowAbnormal);
+  }, [abnormalAnalysis, rawGrouped, ignoreMissingDates, isRowAbnormal]);
+
+  // ===== 圖表資料來源 (根據模式切換) =====
+  const activeChartData = abnormalAnalysis ? abnormalChartData : chartData;
+
   // ===== Brush 可見的表格分組 =====
   const visibleGrouped = useMemo(() => {
     if (!brushRange || chartData.length === 0) return grouped;
@@ -400,10 +491,21 @@ export default function HealthDashboard() {
     }
   }, []);
 
-  // ===== 滾輪縮放時間軸 =====
+  // ===== 曲線圖進階呈現切換 =====
+  const handleAbnormalAnalysisToggle = useCallback((checked) => {
+    setAbnormalAnalysis(checked);
+    setBrushRange(null);
+    if (checked) {
+      setSavedHideRecordDetails(hideRecordDetails);
+    } else {
+      setHideRecordDetails(savedHideRecordDetails);
+    }
+  }, [hideRecordDetails, savedHideRecordDetails]);
+
+  // ===== 滾輪縮放連動 =====
   useEffect(() => {
-    zoomStateRef.current = { len: chartData.length, range: brushRange };
-  }, [chartData.length, brushRange]);
+    zoomStateRef.current = { len: activeChartData.length, range: brushRange };
+  }, [activeChartData.length, brushRange]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -425,7 +527,7 @@ export default function HealthDashboard() {
 
       const start = range ? range.startIndex : 0;
       const end = range ? range.endIndex : len - 1;
-      
+
       // 動態縮放比例：至少 1，最大為當前範圍的 10%
       const currentSpan = end - start;
       const zoomFactor = Math.max(1, Math.floor(currentSpan * 0.1));
@@ -456,7 +558,7 @@ export default function HealthDashboard() {
     let highLimit, lowLimit;
     const numVal = Number(val);
     if (isNaN(numVal)) return {};
-    
+
     switch (type) {
       case 'sys':
         highLimit = Number(settings.sys_high);
@@ -511,8 +613,23 @@ export default function HealthDashboard() {
     <div className="health-page">
       {/* 頂部 */}
       <header className="health-header">
-        <button className="btn-back" onClick={() => router.push('/dashboard')}>← 返回</button>
-        <h1>血壓心跳紀錄</h1>
+        <button className="btn-back" onClick={() => router.push(isGuest ? '/' : '/dashboard')}>← {isGuest ? '回登入頁' : '返回'}</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h1>血壓心跳紀錄</h1>
+          {isGuest && (
+            <span style={{
+              background: 'rgba(14, 165, 233, 0.12)',
+              color: '#0284c7',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              padding: '2px 8px',
+              borderRadius: '12px',
+              border: '1px solid rgba(14, 165, 233, 0.3)'
+            }}>
+              👤 訪客體驗模式 ({targetUser})
+            </span>
+          )}
+        </div>
         <div style={{ width: 60 }}></div>
       </header>
 
@@ -579,22 +696,42 @@ export default function HealthDashboard() {
           </select>
         </div>
 
-        <label className="filter-checkbox">
+        <label className={`filter-checkbox${abnormalAnalysis ? ' disabled' : ''}`}>
           <input
             type="checkbox"
             checked={hideRecordDetails}
             onChange={(e) => setHideRecordDetails(e.target.checked)}
+            disabled={abnormalAnalysis}
           />
           <span>隱藏表格明細</span>
         </label>
 
-        <label className="filter-checkbox" style={{ color: '#ef4444', fontWeight: 600 }}>
+        <label className={`filter-checkbox${abnormalAnalysis ? ' disabled' : ''}`} style={{ color: '#ef4444', fontWeight: 600 }}>
           <input
             type="checkbox"
             checked={onlyAbnormalDays}
             onChange={(e) => setOnlyAbnormalDays(e.target.checked)}
+            disabled={abnormalAnalysis}
           />
-          <span>僅顯示包含異常紀錄之日期</span>
+          <span>僅顯示包含異常紀錄之日期(僅改變下方表格呈現效果)</span>
+        </label>
+        <label className={`filter-checkbox${hideChart ? ' disabled' : ''}`} style={{ color: '#0ea5e9', fontWeight: 600 }}>
+          <input
+            type="checkbox"
+            checked={abnormalAnalysis}
+            onChange={(e) => handleAbnormalAnalysisToggle(e.target.checked)}
+            disabled={hideChart}
+          />
+          <span>📊 曲線圖進階呈現</span>
+        </label>
+        <label className={`filter-checkbox${abnormalAnalysis ? ' disabled' : ''}`}>
+          <input
+            type="checkbox"
+            checked={hideChart}
+            onChange={(e) => setHideChart(e.target.checked)}
+            disabled={abnormalAnalysis}
+          />
+          <span>隱藏曲線圖</span>
         </label>
       </div>
 
@@ -611,115 +748,214 @@ export default function HealthDashboard() {
       ) : (
         <>
           {/* ===== 折線圖 (每日平均) ===== */}
-          <div className="chart-container" ref={chartContainerRef}>
-            <div className="chart-legend">
-              <span className="legend-item" style={{ '--dot-color': '#22c55e' }}>高壓(均)</span>
-              <span className="legend-item" style={{ '--dot-color': '#8b5cf6' }}>低壓(均)</span>
-              <span className="legend-item" style={{ '--dot-color': '#ef4444' }}>心率(均)</span>
-            </div>
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={chartData} margin={{ top: 10, right: 16, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fill: '#64748b', fontSize: 11 }}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  tick={{ fill: '#64748b', fontSize: 11 }}
-                  tickLine={false}
-                  axisLine={false}
-                  domain={['dataMin - 10', 'dataMax + 10']}
-                />
-                <Tooltip
-                  content={({ active, payload, label }) => {
-                    if (!active || !payload || payload.length === 0) return null;
-                    const dataPoint = payload[0]?.payload;
-                    const rows = dataPoint?.allRows || [];
-                    return (
-                      <div style={{
-                        backgroundColor: '#fff',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 8,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                        padding: '10px 14px',
-                        fontSize: 13,
-                        maxWidth: 320,
-                      }}>
-                        <p style={{ fontWeight: 600, marginBottom: 6, color: '#334155' }}>📅 {label}</p>
-                        <p style={{ margin: '2px 0', color: '#22c55e' }}>收縮壓(均): {dataPoint?.sys ?? '—'}</p>
-                        <p style={{ margin: '2px 0', color: '#8b5cf6' }}>舒張壓(均): {dataPoint?.dia ?? '—'}</p>
-                        <p style={{ margin: '2px 0', color: '#ef4444' }}>心率(均): {dataPoint?.pul ?? '—'}</p>
-                        {rows.length > 0 && (
-                          <>
-                            <hr style={{ margin: '6px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
-                            <p style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>量測明細 ({rows.length} 筆)：</p>
-                            {rows.map((r, i) => (
-                              <p key={i} style={{ margin: '2px 0', fontSize: 11, color: '#475569', display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
-                                <span style={{ color: '#94a3b8', marginRight: 2 }}>{fmtTime(r.date)}</span>
-                                <span style={{ color: '#cbd5e1' }}>—</span>
-                                <span style={{ color: '#64748b', fontSize: 10 }}>高</span>
-                                <span style={{ fontWeight: 600, ...valStyle(r.sys, 'sys') }}>{r.sys ?? '—'}</span>
-                                <span style={{ color: '#cbd5e1' }}>/</span>
-                                <span style={{ color: '#64748b', fontSize: 10 }}>低</span>
-                                <span style={{ fontWeight: 600, ...valStyle(r.dia, 'dia') }}>{r.dia ?? '—'}</span>
-                                <span style={{ color: '#cbd5e1' }}>❤️</span>
-                                <span style={{ fontWeight: 600, ...valStyle(r.pul, 'pul') }}>{r.pul ?? '—'}</span>
-                              </p>
-                            ))}
-                          </>
-                        )}
-                      </div>
-                    );
-                  }}
-                />
-
-                {/* 高低標參考線 */}
-                {settings && (
-                  <>
-                    <ReferenceLine y={settings.sys_high} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1} label={{ value: `高壓高標 ${settings.sys_high}`, position: 'right', fontSize: 10, fill: '#ef4444' }} />
-                    <ReferenceLine y={settings.sys_low} stroke="#f97316" strokeDasharray="6 3" strokeWidth={1} />
-                  </>
-                )}
-
-                {/* 密集時間區間（桌機: 半年含以上 / 手機: 三月含以上）縮小節點，避免遮蔽曲線 */}
-                {(() => {
-                  const targetRanges = isMobile ? ['90', '180', '365', 'all'] : ['180', '365', 'all'];
-                  const isLargeRange = targetRanges.includes(activeRange);
-                  const dotR = isLargeRange ? 1.2 : 3;
-                  const activeR = isLargeRange ? 4 : 5;
-                  const sysW = isLargeRange ? 1.8 : 2.5;
-                  const lineW = isLargeRange ? 1.5 : 2;
-                  return (
-                    <>
-                      <Line type="monotone" dataKey="sys" name="sys" stroke="#22c55e" strokeWidth={sysW} dot={{ r: dotR, fill: '#22c55e' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
-                      <Line type="monotone" dataKey="dia" name="dia" stroke="#8b5cf6" strokeWidth={lineW} dot={{ r: dotR, fill: '#8b5cf6' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
-                      <Line type="monotone" dataKey="pul" name="pul" stroke="#ef4444" strokeWidth={lineW} dot={{ r: dotR, fill: '#ef4444' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
-                    </>
-                  );
-                })()}
-
-                {/* Brush 拖曳選擇器 */}
-                {chartData.length > 5 && (
-                  <Brush
-                    key={`brush-${brushKey}`}
+          {!hideChart && (
+            <div className="chart-container" ref={chartContainerRef}>
+              {abnormalAnalysis ? (
+                <div className="abnormal-legend-bar">
+                  {[
+                    { key: 'allDay', label: '📊 全日均', color: '#22c55e' },
+                    { key: 'morning', label: '☀️ 早上', color: '#f59e0b' },
+                    { key: 'afternoon', label: '🌤️ 午間', color: '#06b6d4' },
+                    { key: 'evening', label: '🌙 晚上', color: '#6366f1' },
+                  ].map(item => (
+                    <button
+                      key={item.key}
+                      className={`abnormal-legend-btn ${abnormalLineVisibility[item.key] ? 'active' : ''}`}
+                      onClick={() => setAbnormalLineVisibility(prev => ({ ...prev, [item.key]: !prev[item.key] }))}
+                      style={abnormalLineVisibility[item.key] ? { '--btn-color': item.color } : {}}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="chart-legend">
+                  <span className="legend-item" style={{ '--dot-color': '#22c55e' }}>高壓(均)</span>
+                  <span className="legend-item" style={{ '--dot-color': '#8b5cf6' }}>低壓(均)</span>
+                  <span className="legend-item" style={{ '--dot-color': '#ef4444' }}>心率(均)</span>
+                </div>
+              )}
+              <ResponsiveContainer width="100%" height={abnormalAnalysis ? 420 : 240}>
+                <LineChart data={activeChartData} margin={{ top: 10, right: 16, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+                  <XAxis
                     dataKey="name"
-                    height={28}
-                    stroke="#0ea5e9"
-                    fill="rgba(14, 165, 233, 0.05)"
-                    travellerWidth={10}
-                    onChange={handleBrushChange}
-                    startIndex={brushRange?.startIndex}
-                    endIndex={brushRange?.endIndex}
+                    tick={{ fill: '#64748b', fontSize: 11 }}
+                    tickLine={false}
+                    interval="preserveStartEnd"
                   />
-                )}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+                  <YAxis
+                    tick={{ fill: '#64748b', fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                    domain={abnormalAnalysis ? ['dataMin - 20', 'dataMax + 20'] : ['dataMin - 10', 'dataMax + 10']}
+                  />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload || payload.length === 0) return null;
+                      const dataPoint = payload[0]?.payload;
+                      if (abnormalAnalysis) {
+                        return (
+                          <div style={{
+                            backgroundColor: '#fff',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: 8,
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                            padding: '10px 14px',
+                            fontSize: 13,
+                            maxWidth: 360,
+                          }}>
+                            <p style={{ fontWeight: 600, marginBottom: 6, color: '#334155' }}>📅 {label}</p>
+                            {dataPoint?.sys != null && (
+                              <p style={{ margin: '4px 0', color: '#22c55e' }}>
+                                📊 全日均: <b>{dataPoint.sys}</b>/<b>{dataPoint.dia}</b> ❤️<b>{dataPoint.pul}</b>
+                              </p>
+                            )}
+                            {dataPoint?.morningSys != null && (
+                              <p style={{ margin: '4px 0', color: '#f59e0b' }}>
+                                ☀️ 早上: <b>{dataPoint.morningSys}</b>/<b>{dataPoint.morningDia}</b> ❤️<b>{dataPoint.morningPul}</b>
+                              </p>
+                            )}
+                            {dataPoint?.afternoonSys != null && (
+                              <p style={{ margin: '4px 0', color: '#06b6d4' }}>
+                                🌤️ 午間: <b>{dataPoint.afternoonSys}</b>/<b>{dataPoint.afternoonDia}</b> ❤️<b>{dataPoint.afternoonPul}</b>
+                              </p>
+                            )}
+                            {dataPoint?.eveningSys != null && (
+                              <p style={{ margin: '4px 0', color: '#6366f1' }}>
+                                🌙 晚上: <b>{dataPoint.eveningSys}</b>/<b>{dataPoint.eveningDia}</b> ❤️<b>{dataPoint.eveningPul}</b>
+                              </p>
+                            )}
+                          </div>
+                        );
+                      }
+                      const rows = dataPoint?.allRows || [];
+                      return (
+                        <div style={{
+                          backgroundColor: '#fff',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 8,
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                          padding: '10px 14px',
+                          fontSize: 13,
+                          maxWidth: 320,
+                        }}>
+                          <p style={{ fontWeight: 600, marginBottom: 6, color: '#334155' }}>📅 {label}</p>
+                          <p style={{ margin: '2px 0', color: '#22c55e' }}>收縮壓(均): {dataPoint?.sys ?? '—'}</p>
+                          <p style={{ margin: '2px 0', color: '#8b5cf6' }}>舒張壓(均): {dataPoint?.dia ?? '—'}</p>
+                          <p style={{ margin: '2px 0', color: '#ef4444' }}>心率(均): {dataPoint?.pul ?? '—'}</p>
+                          {rows.length > 0 && (
+                            <>
+                              <hr style={{ margin: '6px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
+                              <p style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>量測明細 ({rows.length} 筆)：</p>
+                              {rows.map((r, i) => (
+                                <p key={i} style={{ margin: '2px 0', fontSize: 11, color: '#475569', display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+                                  <span style={{ color: '#94a3b8', marginRight: 2 }}>{fmtTime(r.date)}</span>
+                                  <span style={{ color: '#cbd5e1' }}>—</span>
+                                  <span style={{ color: '#64748b', fontSize: 10 }}>高</span>
+                                  <span style={{ fontWeight: 600, ...valStyle(r.sys, 'sys') }}>{r.sys ?? '—'}</span>
+                                  <span style={{ color: '#cbd5e1' }}>/</span>
+                                  <span style={{ color: '#64748b', fontSize: 10 }}>低</span>
+                                  <span style={{ fontWeight: 600, ...valStyle(r.dia, 'dia') }}>{r.dia ?? '—'}</span>
+                                  <span style={{ color: '#cbd5e1' }}>❤️</span>
+                                  <span style={{ fontWeight: 600, ...valStyle(r.pul, 'pul') }}>{r.pul ?? '—'}</span>
+                                </p>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      );
+                    }}
+                  />
+
+                  {/* 高低標參考線 */}
+                  {settings && (
+                    <>
+                      <ReferenceLine y={settings.sys_high} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1} label={{ value: `高壓高標 ${settings.sys_high}`, position: 'right', fontSize: 10, fill: '#ef4444' }} />
+                      <ReferenceLine y={settings.sys_low} stroke="#f97316" strokeDasharray="6 3" strokeWidth={1} />
+                    </>
+                  )}
+
+                  {/* ===== 曲線 ===== */}
+                  {(() => {
+                    /* 密集時間區間與自訂時間軸 (包含 custom / all / 長天數) 縮小節點(r: 1.2)，避免遮蔽曲線 */
+                    const targetRanges = isMobile ? ['90', '180', '365', 'all', 'custom'] : ['180', '365', 'all', 'custom'];
+                    const isLargeRange = targetRanges.includes(activeRange);
+                    const dotR = isLargeRange ? 1.2 : 3;
+                    const subDotR = isLargeRange ? 1.2 : 2.5;
+                    const activeR = isLargeRange ? 4 : 5;
+                    const sysW = isLargeRange ? 1.8 : 2.5;
+                    const lineW = isLargeRange ? 1.5 : 2;
+
+                    if (abnormalAnalysis) {
+                      return (
+                        <>
+                          {/* 全日均 — 實線 */}
+                          {abnormalLineVisibility.allDay && (
+                            <>
+                              <Line type="monotone" dataKey="sys" name="全日均-高壓" stroke="#22c55e" strokeWidth={sysW} dot={{ r: dotR, fill: '#22c55e' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
+                              <Line type="monotone" dataKey="dia" name="全日均-低壓" stroke="#8b5cf6" strokeWidth={lineW} dot={{ r: dotR, fill: '#8b5cf6' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
+                              <Line type="monotone" dataKey="pul" name="全日均-心率" stroke="#ef4444" strokeWidth={lineW} dot={{ r: dotR, fill: '#ef4444' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
+                            </>
+                          )}
+                          {/* 早上 — 長虛線 */}
+                          {abnormalLineVisibility.morning && (
+                            <>
+                              <Line type="monotone" dataKey="morningSys" name="早上-高壓" stroke="#f59e0b" strokeWidth={lineW} dot={{ r: subDotR, fill: '#f59e0b' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="6 3" />
+                              <Line type="monotone" dataKey="morningDia" name="早上-低壓" stroke="#d97706" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#d97706' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="6 3" />
+                              <Line type="monotone" dataKey="morningPul" name="早上-心率" stroke="#b45309" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#b45309' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="6 3" />
+                            </>
+                          )}
+                          {/* 午間 — 中虛線 */}
+                          {abnormalLineVisibility.afternoon && (
+                            <>
+                              <Line type="monotone" dataKey="afternoonSys" name="午間-高壓" stroke="#06b6d4" strokeWidth={lineW} dot={{ r: subDotR, fill: '#06b6d4' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="4 2" />
+                              <Line type="monotone" dataKey="afternoonDia" name="午間-低壓" stroke="#0891b2" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#0891b2' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="4 2" />
+                              <Line type="monotone" dataKey="afternoonPul" name="午間-心率" stroke="#0e7490" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#0e7490' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="4 2" />
+                            </>
+                          )}
+                          {/* 晚上 — 短虛線 */}
+                          {abnormalLineVisibility.evening && (
+                            <>
+                              <Line type="monotone" dataKey="eveningSys" name="晚上-高壓" stroke="#6366f1" strokeWidth={lineW} dot={{ r: subDotR, fill: '#6366f1' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="2 2" />
+                              <Line type="monotone" dataKey="eveningDia" name="晚上-低壓" stroke="#4f46e5" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#4f46e5' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="2 2" />
+                              <Line type="monotone" dataKey="eveningPul" name="晚上-心率" stroke="#4338ca" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#4338ca' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="2 2" />
+                            </>
+                          )}
+                        </>
+                      );
+                    }
+
+                    return (
+                      <>
+                        <Line type="monotone" dataKey="sys" name="sys" stroke="#22c55e" strokeWidth={sysW} dot={{ r: dotR, fill: '#22c55e' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
+                        <Line type="monotone" dataKey="dia" name="dia" stroke="#8b5cf6" strokeWidth={lineW} dot={{ r: dotR, fill: '#8b5cf6' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
+                        <Line type="monotone" dataKey="pul" name="pul" stroke="#ef4444" strokeWidth={lineW} dot={{ r: dotR, fill: '#ef4444' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
+                      </>
+                    );
+                  })()}
+
+                  {/* Brush 拖曳選擇器 */}
+                  {activeChartData.length > 5 && (
+                    <Brush
+                      key={`brush-${brushKey}`}
+                      dataKey="name"
+                      height={28}
+                      stroke="#0ea5e9"
+                      fill="rgba(14, 165, 233, 0.05)"
+                      travellerWidth={10}
+                      onChange={handleBrushChange}
+                      startIndex={brushRange?.startIndex}
+                      endIndex={brushRange?.endIndex}
+                    />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
 
           {/* ===== 資料表格 ===== */}
-          <div className="data-table-wrapper" ref={tableRef}>
+          <div className="data-table-wrapper" ref={tableRef} style={abnormalAnalysis ? { display: 'none' } : undefined}>
             {visibleGrouped.map(g => (
               <div
                 key={g.logicalDate}
@@ -750,13 +986,13 @@ export default function HealthDashboard() {
                   <div key={`${row.date}-${idx}`} className={`record-row period-${row.period}`}>
                     <span className="record-period-icon">{periodIcon(row.period)}</span>
                     <span className="record-time">{fmtTime(row.date)}</span>
-                    
+
                     <span className="metric-label">高壓</span>
                     <span className="record-val" style={valStyle(row.sys, 'sys')}>{row.sys}</span>
                     <span className="record-sep">/</span>
                     <span className="metric-label">低壓</span>
                     <span className="record-val" style={valStyle(row.dia, 'dia')}>{row.dia}</span>
-                    
+
                     <span className="record-heart" style={valStyle(row.pul, 'pul')}>
                       <span className="metric-label" style={{ marginRight: '4px' }}>心率</span>
                       ❤️ {row.pul}

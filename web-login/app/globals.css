@@ -376,6 +376,51 @@ body {
   box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
 }
 
+/* Disabled checkbox 視覺效果 */
+.filter-checkbox.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* 曲線圖進階呈現 - 時段圖例切換列 */
+.abnormal-legend-bar {
+  display: flex;
+  gap: 8px;
+  padding: 0 8px 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.abnormal-legend-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1.5px solid #cbd5e1;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.abnormal-legend-btn:hover {
+  border-color: #94a3b8;
+  background: #f1f5f9;
+}
+.abnormal-legend-btn.active {
+  background: var(--btn-color, #0ea5e9);
+  color: white;
+  border-color: var(--btn-color, #0ea5e9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-weight: 600;
+}
+.abnormal-legend-btn.active:hover {
+  filter: brightness(0.9);
+}
+
 /* 圖表容器 */
 .chart-container {
   background: #fff;
@@ -659,6 +704,16 @@ body {
     margin: 6px 6px;
     padding: 8px 2px 4px 2px;
     border-radius: 10px;
+  }
+  .abnormal-legend-bar {
+    gap: 4px;
+    padding: 0 4px 6px;
+    justify-content: center;
+  }
+  .abnormal-legend-btn {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+    border-radius: 16px;
   }
   .chart-legend {
     gap: 10px;

@@ -15,6 +15,10 @@ export async function POST(request) {
       return NextResponse.json({ error: '請提供檔案與帳號' }, { status: 400 });
     }
 
+    if (username === 'guest') {
+      return NextResponse.json({ error: '🔒 訪客體驗模式無法匯入或上傳檔案' }, { status: 403 });
+    }
+
     // 取得使用者 ID
     const turso = getDb();
     const userRes = await turso.execute({
@@ -37,8 +41,8 @@ export async function POST(request) {
     try {
       // 使用 better-sqlite3 讀取 .bp / .db 檔案
       const sqliteDb = new Database(tempFilePath, { fileMustExist: true });
-      
-      // 根據我們先前探測的 Schema，讀取 bp 資料表
+
+      // 讀取 bp 資料表
       records = sqliteDb.prepare('SELECT date, sys, dia, pul FROM bp').all();
       sqliteDb.close();
     } catch (e) {
@@ -46,7 +50,7 @@ export async function POST(request) {
       await unlink(tempFilePath).catch(() => {});
       return NextResponse.json({ error: '檔案格式錯誤，無法解析資料庫' }, { status: 400 });
     }
-    
+
     // 刪除暫存檔
     await unlink(tempFilePath).catch(() => {});
 
@@ -54,7 +58,7 @@ export async function POST(request) {
        return NextResponse.json({ success: true, message: '檔案中沒有血壓紀錄', count: 0 });
     }
 
-    // 將紀錄匯入至 Turso (使用 INSERT OR IGNORE 避免重複匯入)
+    // 將紀錄匯入至 Turso
     let inserted = 0;
     for (const record of records) {
       try {
