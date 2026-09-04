@@ -371,7 +371,10 @@ export default function HealthDashboard() {
   const [hideChart, setHideChart] = useState(false);
   const [abnormalAnalysis, setAbnormalAnalysis] = useState(false);
   const [abnormalLineVisibility, setAbnormalLineVisibility] = useState({
-    allDay: true, morning: true, afternoon: true, evening: true,
+    allDay:    { active: true, sys: true, dia: true, pul: true },
+    morning:   { active: true, sys: true, dia: true, pul: true },
+    afternoon: { active: true, sys: true, dia: true, pul: true },
+    evening:   { active: true, sys: true, dia: true, pul: true },
   });
   const [savedHideRecordDetails, setSavedHideRecordDetails] = useState(false);
 
@@ -753,20 +756,46 @@ export default function HealthDashboard() {
               {abnormalAnalysis ? (
                 <div className="abnormal-legend-bar">
                   {[
-                    { key: 'allDay', label: '📊 全日均', color: '#22c55e' },
-                    { key: 'morning', label: '☀️ 早上', color: '#f59e0b' },
-                    { key: 'afternoon', label: '🌤️ 午間', color: '#06b6d4' },
-                    { key: 'evening', label: '🌙 晚上', color: '#6366f1' },
-                  ].map(item => (
-                    <button
-                      key={item.key}
-                      className={`abnormal-legend-btn ${abnormalLineVisibility[item.key] ? 'active' : ''}`}
-                      onClick={() => setAbnormalLineVisibility(prev => ({ ...prev, [item.key]: !prev[item.key] }))}
-                      style={abnormalLineVisibility[item.key] ? { '--btn-color': item.color } : {}}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
+                    { key: 'allDay',    label: '📊 全日均', color: '#22c55e', subColors: { sys: '#22c55e', dia: '#8b5cf6', pul: '#ef4444' } },
+                    { key: 'morning',   label: '☀️ 早上',   color: '#f59e0b', subColors: { sys: '#f59e0b', dia: '#d97706', pul: '#b45309' } },
+                    { key: 'afternoon', label: '🌤️ 午間',   color: '#06b6d4', subColors: { sys: '#06b6d4', dia: '#0891b2', pul: '#0e7490' } },
+                    { key: 'evening',   label: '🌙 晚上',   color: '#6366f1', subColors: { sys: '#6366f1', dia: '#4f46e5', pul: '#4338ca' } },
+                  ].map(item => {
+                    const vis = abnormalLineVisibility[item.key];
+                    return (
+                      <div key={item.key} className="abnormal-legend-group">
+                        {/* 維度主按鈕 */}
+                        <button
+                          className={`abnormal-legend-btn ${vis.active ? 'active' : ''}`}
+                          onClick={() => setAbnormalLineVisibility(prev => ({
+                            ...prev,
+                            [item.key]: { ...prev[item.key], active: !prev[item.key].active }
+                          }))}
+                          style={vis.active ? { '--btn-color': item.color } : {}}
+                        >
+                          {item.label}
+                        </button>
+                        {/* 子指標按鈕：僅在維度啟用時顯示 */}
+                        {vis.active && (
+                          <div className="abnormal-sub-btns">
+                            {[{ field: 'sys', label: '高壓' }, { field: 'dia', label: '低壓' }, { field: 'pul', label: '心率' }].map(sub => (
+                              <button
+                                key={sub.field}
+                                className={`abnormal-sub-btn ${vis[sub.field] ? 'active' : ''}`}
+                                style={vis[sub.field] ? { '--sub-color': item.subColors[sub.field] } : {}}
+                                onClick={() => setAbnormalLineVisibility(prev => ({
+                                  ...prev,
+                                  [item.key]: { ...prev[item.key], [sub.field]: !prev[item.key][sub.field] }
+                                }))}
+                              >
+                                {sub.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="chart-legend">
@@ -888,40 +917,25 @@ export default function HealthDashboard() {
                     const lineW = isLargeRange ? 1.5 : 2;
 
                     if (abnormalAnalysis) {
+                      const alv = abnormalLineVisibility;
                       return (
                         <>
                           {/* 全日均 — 實線 */}
-                          {abnormalLineVisibility.allDay && (
-                            <>
-                              <Line type="monotone" dataKey="sys" name="全日均-高壓" stroke="#22c55e" strokeWidth={sysW} dot={{ r: dotR, fill: '#22c55e' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
-                              <Line type="monotone" dataKey="dia" name="全日均-低壓" stroke="#8b5cf6" strokeWidth={lineW} dot={{ r: dotR, fill: '#8b5cf6' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
-                              <Line type="monotone" dataKey="pul" name="全日均-心率" stroke="#ef4444" strokeWidth={lineW} dot={{ r: dotR, fill: '#ef4444' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />
-                            </>
-                          )}
+                          {alv.allDay.active && alv.allDay.sys && <Line type="monotone" dataKey="sys" name="全日均-高壓" stroke="#22c55e" strokeWidth={sysW} dot={{ r: dotR, fill: '#22c55e' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />}
+                          {alv.allDay.active && alv.allDay.dia && <Line type="monotone" dataKey="dia" name="全日均-低壓" stroke="#8b5cf6" strokeWidth={lineW} dot={{ r: dotR, fill: '#8b5cf6' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />}
+                          {alv.allDay.active && alv.allDay.pul && <Line type="monotone" dataKey="pul" name="全日均-心率" stroke="#ef4444" strokeWidth={lineW} dot={{ r: dotR, fill: '#ef4444' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} />}
                           {/* 早上 — 長虛線 */}
-                          {abnormalLineVisibility.morning && (
-                            <>
-                              <Line type="monotone" dataKey="morningSys" name="早上-高壓" stroke="#f59e0b" strokeWidth={lineW} dot={{ r: subDotR, fill: '#f59e0b' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="6 3" />
-                              <Line type="monotone" dataKey="morningDia" name="早上-低壓" stroke="#d97706" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#d97706' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="6 3" />
-                              <Line type="monotone" dataKey="morningPul" name="早上-心率" stroke="#b45309" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#b45309' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="6 3" />
-                            </>
-                          )}
+                          {alv.morning.active && alv.morning.sys && <Line type="monotone" dataKey="morningSys" name="早上-高壓" stroke="#f59e0b" strokeWidth={lineW} dot={{ r: subDotR, fill: '#f59e0b' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="6 3" />}
+                          {alv.morning.active && alv.morning.dia && <Line type="monotone" dataKey="morningDia" name="早上-低壓" stroke="#d97706" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#d97706' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="6 3" />}
+                          {alv.morning.active && alv.morning.pul && <Line type="monotone" dataKey="morningPul" name="早上-心率" stroke="#b45309" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#b45309' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="6 3" />}
                           {/* 午間 — 中虛線 */}
-                          {abnormalLineVisibility.afternoon && (
-                            <>
-                              <Line type="monotone" dataKey="afternoonSys" name="午間-高壓" stroke="#06b6d4" strokeWidth={lineW} dot={{ r: subDotR, fill: '#06b6d4' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="4 2" />
-                              <Line type="monotone" dataKey="afternoonDia" name="午間-低壓" stroke="#0891b2" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#0891b2' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="4 2" />
-                              <Line type="monotone" dataKey="afternoonPul" name="午間-心率" stroke="#0e7490" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#0e7490' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="4 2" />
-                            </>
-                          )}
+                          {alv.afternoon.active && alv.afternoon.sys && <Line type="monotone" dataKey="afternoonSys" name="午間-高壓" stroke="#06b6d4" strokeWidth={lineW} dot={{ r: subDotR, fill: '#06b6d4' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="4 2" />}
+                          {alv.afternoon.active && alv.afternoon.dia && <Line type="monotone" dataKey="afternoonDia" name="午間-低壓" stroke="#0891b2" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#0891b2' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="4 2" />}
+                          {alv.afternoon.active && alv.afternoon.pul && <Line type="monotone" dataKey="afternoonPul" name="午間-心率" stroke="#0e7490" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#0e7490' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="4 2" />}
                           {/* 晚上 — 短虛線 */}
-                          {abnormalLineVisibility.evening && (
-                            <>
-                              <Line type="monotone" dataKey="eveningSys" name="晚上-高壓" stroke="#6366f1" strokeWidth={lineW} dot={{ r: subDotR, fill: '#6366f1' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="2 2" />
-                              <Line type="monotone" dataKey="eveningDia" name="晚上-低壓" stroke="#4f46e5" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#4f46e5' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="2 2" />
-                              <Line type="monotone" dataKey="eveningPul" name="晚上-心率" stroke="#4338ca" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#4338ca' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="2 2" />
-                            </>
-                          )}
+                          {alv.evening.active && alv.evening.sys && <Line type="monotone" dataKey="eveningSys" name="晚上-高壓" stroke="#6366f1" strokeWidth={lineW} dot={{ r: subDotR, fill: '#6366f1' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="2 2" />}
+                          {alv.evening.active && alv.evening.dia && <Line type="monotone" dataKey="eveningDia" name="晚上-低壓" stroke="#4f46e5" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#4f46e5' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="2 2" />}
+                          {alv.evening.active && alv.evening.pul && <Line type="monotone" dataKey="eveningPul" name="晚上-心率" stroke="#4338ca" strokeWidth={isLargeRange ? 1.2 : 1.5} dot={{ r: subDotR, fill: '#4338ca' }} activeDot={{ r: activeR }} connectNulls={ignoreMissingDates} strokeDasharray="2 2" />}
                         </>
                       );
                     }

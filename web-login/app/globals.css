@@ -384,13 +384,6 @@ body {
 }
 
 /* 曲線圖進階呈現 - 時段圖例切換列 */
-.abnormal-legend-bar {
-  display: flex;
-  gap: 8px;
-  padding: 0 8px 10px;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
 .abnormal-legend-btn {
   display: flex;
   align-items: center;
@@ -421,7 +414,57 @@ body {
   filter: brightness(0.9);
 }
 
-/* 圖表容器 */
+/* 曲線圖進階呈現 - 維度群組容器 */
+.abnormal-legend-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 0 8px 10px;
+  justify-content: flex-end;
+  align-items: flex-start;
+}
+.abnormal-legend-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 子指標按鈕列 */
+.abnormal-sub-btns {
+  display: flex;
+  gap: 3px;
+}
+.abnormal-sub-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 12px;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+  white-space: nowrap;
+}
+.abnormal-sub-btn:hover {
+  border-color: #94a3b8;
+  background: #f1f5f9;
+  color: #64748b;
+}
+.abnormal-sub-btn.active {
+  background: var(--sub-color, #0ea5e9);
+  color: white;
+  border-color: var(--sub-color, #0ea5e9);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+.abnormal-sub-btn.active:hover {
+  filter: brightness(0.9);
+}
+
 .chart-container {
   background: #fff;
   margin: 10px 12px;
@@ -706,14 +749,25 @@ body {
     border-radius: 10px;
   }
   .abnormal-legend-bar {
-    gap: 4px;
+    gap: 4px 8px;
     padding: 0 4px 6px;
     justify-content: center;
+  }
+  .abnormal-legend-group {
+    gap: 3px;
   }
   .abnormal-legend-btn {
     padding: 4px 8px;
     font-size: 0.7rem;
     border-radius: 16px;
+  }
+  .abnormal-sub-btns {
+    gap: 2px;
+  }
+  .abnormal-sub-btn {
+    padding: 2px 5px;
+    font-size: 0.62rem;
+    border-radius: 10px;
   }
   .chart-legend {
     gap: 10px;
