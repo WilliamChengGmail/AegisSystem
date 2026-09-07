@@ -393,7 +393,9 @@ export default function SettingsPage() {
               >
                 <option value="">-- 點擊選擇目標用戶 --</option>
                 {usersList.map(u => (
-                  <option key={u.id} value={u.username}>{u.username} {u.role === 'admins' ? '(管理員)' : ''}</option>
+                  <option key={u.id} value={u.username}>
+                    {u.display_name} ({u.pid}) {u.role === 'admins' ? '(管理員)' : ''}
+                  </option>
                 ))}
               </select>
             </div>

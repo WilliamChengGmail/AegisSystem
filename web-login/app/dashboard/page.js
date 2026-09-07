@@ -6,25 +6,34 @@ import { useRouter } from 'next/navigation';
 export default function DashboardIndex() {
   const router = useRouter();
   const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [isGuest, setIsGuest] = useState(false);
+  const [role, setRole] = useState('');
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     const isAuth = sessionStorage.getItem('isAuthenticated');
     const user = sessionStorage.getItem('username');
     const guestState = sessionStorage.getItem('isGuest') === 'true';
+    const userRole = sessionStorage.getItem('role') || 'users';
+    const dName = sessionStorage.getItem('display_name') || user;
 
     if (!isAuth || !user) {
       router.push('/');
       return;
     }
     setUsername(user);
+    setDisplayName(dName);
     setIsGuest(guestState);
+    setRole(userRole);
   }, [router]);
 
   const handleLogout = () => {
     sessionStorage.removeItem('isAuthenticated');
     sessionStorage.removeItem('username');
+    sessionStorage.removeItem('display_name');
+    sessionStorage.removeItem('pid');
+    sessionStorage.removeItem('role');
     sessionStorage.removeItem('isGuest');
     sessionStorage.removeItem('targetUser');
     sessionStorage.removeItem('visibleUsers');
@@ -67,6 +76,17 @@ export default function DashboardIndex() {
     },
   ];
 
+  if (role === 'admins') {
+    features.push({
+      icon: '👥',
+      title: '使用者與組態',
+      desc: '管理員專屬：帳號權限與全域設定',
+      path: '/dashboard/users',
+      color: 'linear-gradient(135deg, #10b981, #059669)',
+      disabled: false,
+    });
+  }
+
   return (
     <div className="dashboard-home">
       {/* 頂部導航列 */}
@@ -74,7 +94,7 @@ export default function DashboardIndex() {
         <div className="header-left">
           <h1 className="header-logo">Aegis</h1>
           <span className="header-user">
-            Hi, {isGuest ? 'Guest 訪客' : username}
+            Hi, {isGuest ? 'Guest 訪客' : displayName}
             {isGuest && (
               <span style={{
                 marginLeft: '8px',

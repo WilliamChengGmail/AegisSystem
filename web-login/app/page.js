@@ -6,10 +6,14 @@ import { useRouter } from 'next/navigation';
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [guestLoading, setGuestLoading] = useState(false);
   const [allowGuestLogin, setAllowGuestLogin] = useState(false);
+  const [allowRegistration, setAllowRegistration] = useState(false);
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [registerSuccess, setRegisterSuccess] = useState('');
   const router = useRouter();
 
   // 讀取網站組態設定
@@ -18,8 +22,9 @@ export default function LoginPage() {
       try {
         const res = await fetch('/api/configs');
         const data = await res.json();
-        if (data.configs && data.configs.allow_guest_login === 'enable') {
-          setAllowGuestLogin(true);
+        if (data.configs) {
+          if (data.configs.allow_guest_login === 'enable') setAllowGuestLogin(true);
+          if (data.configs.allow_registration === 'enable') setAllowRegistration(true);
         }
       } catch (err) {
         console.error('Failed to fetch configs:', err);
@@ -34,23 +39,38 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/login', {
+      const bodyParams = isRegisterMode ? { username, password, displayName } : { username, password };
+      const res = await fetch(isRegisterMode ? '/api/register' : '/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(bodyParams),
       });
 
       const data = await res.json();
 
       if (res.ok) {
-        sessionStorage.setItem('isAuthenticated', 'true');
-        sessionStorage.setItem('username', username);
-        sessionStorage.setItem('userId', data.id);
-        sessionStorage.setItem('role', data.role);
-        sessionStorage.removeItem('isGuest');
-        router.push('/dashboard');
+        if (isRegisterMode) {
+          setRegisterSuccess(data.message);
+          setIsRegisterMode(false);
+          setUsername('');
+          setPassword('');
+        } else {
+          if (data.require_pwd_change) {
+            sessionStorage.setItem('temp_username', data.username);
+            router.push('/force-change-password');
+            return;
+          }
+          sessionStorage.setItem('isAuthenticated', 'true');
+          sessionStorage.setItem('username', username);
+          sessionStorage.setItem('display_name', data.display_name);
+          sessionStorage.setItem('pid', data.pid);
+          sessionStorage.setItem('userId', data.id);
+          sessionStorage.setItem('role', data.role);
+          sessionStorage.removeItem('isGuest');
+          router.push('/dashboard');
+        }
       } else {
-        setError(data.error || '登入失敗，請檢查帳號與密碼');
+        setError(data.error || (isRegisterMode ? '註冊失敗' : '登入失敗，請檢查帳號與密碼'));
       }
     } catch (err) {
       setError('發生錯誤，請稍後再試');
@@ -97,10 +117,11 @@ export default function LoginPage() {
     <main className="container">
       <div className="glass-card">
         <h1 className="title">Aegis System</h1>
-        <p className="subtitle">請登入以繼續存取系統</p>
+        <p className="subtitle">{isRegisterMode ? '請填寫帳號密碼註冊' : '請登入以繼續存取系統'}</p>
 
         <form onSubmit={handleLogin}>
           {error && <div className="error-message">{error}</div>}
+          {registerSuccess && <div style={{ marginBottom: '16px', padding: '12px', background: '#dcfce7', color: '#166534', borderRadius: '8px', fontSize: '0.9rem', textAlign: 'center' }}>{registerSuccess}</div>}
 
           <div className="form-group">
             <label className="form-label" htmlFor="username">帳號</label>
@@ -114,6 +135,21 @@ export default function LoginPage() {
               required
             />
           </div>
+
+          {isRegisterMode && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="displayName">顯示名稱</label>
+              <input
+                id="displayName"
+                type="text"
+                className="form-input"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="請輸入您的姓名或暱稱"
+                required
+              />
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label" htmlFor="password">密碼</label>
@@ -129,9 +165,24 @@ export default function LoginPage() {
           </div>
 
           <button type="submit" className="btn-primary" disabled={loading || guestLoading}>
-            {loading ? <div className="spinner"></div> : '登入'}
+            {loading ? <div className="spinner"></div> : (isRegisterMode ? '註冊帳號' : '登入')}
           </button>
         </form>
+
+        {allowRegistration && (
+          <div style={{ marginTop: '16px', textAlign: 'center' }}>
+            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+              {isRegisterMode ? '已經有帳號了？' : '還沒有帳號嗎？'}
+            </span>
+            <button
+              type="button"
+              onClick={() => { setIsRegisterMode(!isRegisterMode); setError(''); setRegisterSuccess(''); }}
+              style={{ background: 'none', border: 'none', color: '#0ea5e9', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', marginLeft: '8px' }}
+            >
+              {isRegisterMode ? '返回登入' : '立即註冊'}
+            </button>
+          </div>
+        )}
 
         {/* 訪客免密碼登入區塊 (當 allow_guest_login === 'enable' 時顯示) */}
         {allowGuestLogin && (

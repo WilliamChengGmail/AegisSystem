@@ -5,7 +5,7 @@ export async function GET(request) {
   try {
     const db = getDb();
     const result = await db.execute({
-      sql: 'SELECT id, username, role FROM users ORDER BY username ASC',
+      sql: 'SELECT id, username, display_name, pid, role, status, require_pwd_change FROM users ORDER BY username ASC',
       args: []
     });
 

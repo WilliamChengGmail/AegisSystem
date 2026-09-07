@@ -67,6 +67,14 @@ export async function POST(request) {
 
     const user = result.rows[0];
 
+    // 狀態攔截
+    if (user.status === 'pending') {
+      return NextResponse.json({ error: '帳號審核中，無法登入' }, { status: 403 });
+    }
+    if (user.status === 'suspended') {
+      return NextResponse.json({ error: '帳號已被停權，請聯絡管理員' }, { status: 403 });
+    }
+
     // 比對密碼
     const isMatch = await bcrypt.compare(password, user.password_hash);
 
@@ -74,11 +82,24 @@ export async function POST(request) {
       return NextResponse.json({ error: '無效的帳號或密碼' }, { status: 401 });
     }
 
+    // 若需要換密碼，只發放換密碼用的通行證
+    if (user.require_pwd_change === 1) {
+      return NextResponse.json({ 
+        success: true, 
+        message: '首次登入或密碼已被重設，請先修改密碼',
+        require_pwd_change: true,
+        id: user.id,
+        username: user.username // 前端需要帶入
+      });
+    }
+
     return NextResponse.json({ 
       success: true, 
       message: '登入成功',
       id: user.id,
-      role: user.role || 'users'
+      role: user.role || 'users',
+      display_name: user.display_name,
+      pid: user.pid
     });
 
   } catch (error) {

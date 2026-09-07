@@ -670,7 +670,9 @@ export default function HealthDashboard() {
               }}
             >
               {usersList.map(u => (
-                <option key={u.id} value={u.username}>{u.username} {u.role === 'admins' ? '(管理員)' : ''}</option>
+                <option key={u.id} value={u.username}>
+                  {u.display_name} ({u.pid}) {u.role === 'admins' ? '(管理員)' : ''}
+                </option>
               ))}
             </select>
           )}
