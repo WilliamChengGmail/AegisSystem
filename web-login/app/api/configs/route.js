@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 
 // 取得全站組態設定
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const db = getDb();
