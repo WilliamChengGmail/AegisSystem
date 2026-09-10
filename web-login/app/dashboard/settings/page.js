@@ -313,7 +313,7 @@ export default function SettingsPage() {
             <p style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 500, marginBottom: 8 }}>
               血壓數值（可手動調整）
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <div className="settings-grid">
               {bpFields.map(f => (
                 <div key={f.name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <label style={{ fontSize: '0.78rem', fontWeight: 500, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -335,7 +335,7 @@ export default function SettingsPage() {
             <p style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 500, marginBottom: 8 }}>
               心跳數值（因人而異，請手動設定）
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <div className="settings-grid">
               {hrFields.map(f => (
                 <div key={f.name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <label style={{ fontSize: '0.78rem', fontWeight: 500, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>

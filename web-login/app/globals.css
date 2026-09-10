@@ -658,6 +658,13 @@ body {
   background: #f0f4f8;
 }
 
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 /* ====================== */
 /* Animations             */
 /* ====================== */
@@ -684,6 +691,7 @@ body {
   }
   .date-header-allavg { font-size: 1.15rem; }
   .record-val { font-size: 1.15rem; }
+  .settings-grid { grid-template-columns: 1fr; }
 }
 
 /* --- 手機 (≤480px) --- */
