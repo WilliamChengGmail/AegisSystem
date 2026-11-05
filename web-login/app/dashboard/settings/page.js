@@ -40,6 +40,8 @@ export default function SettingsPage() {
   const [activePreset, setActivePreset] = useState('custom');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgressText, setUploadProgressText] = useState('');
+  const [copiedError, setCopiedError] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState('users');
@@ -145,6 +147,8 @@ export default function SettingsPage() {
     const file = e.target.files[0];
     if (!file) return;
 
+    const targetUser = role === 'admins' ? uploadTargetUser : username;
+
     if (role === 'admins') {
       if (!uploadTargetUser) {
         setMessage({ type: 'error', text: '請先選擇要匯入資料的目標用戶' });
@@ -158,21 +162,88 @@ export default function SettingsPage() {
     }
 
     setUploading(true);
+    setUploadProgressText('正在傳送檔案至伺服器並解析資料庫...');
     setMessage({ type: '', text: '' });
 
     const formData = new FormData();
     formData.append('file', file);
     formData.append('operator', username);
-    formData.append('targetUser', role === 'admins' ? uploadTargetUser : username);
+    formData.append('targetUser', targetUser);
+
+    // 動態狀態提示排程
+    const progressTimer = setTimeout(() => {
+      setUploadProgressText('正在進行雲端資料庫批次同步 (Batch Inserting)，請稍候...');
+    }, 1500);
 
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
-      const data = await res.json();
-      setMessage(res.ok
-        ? { type: 'success', text: `✅ ${data.message}` }
-        : { type: 'error', text: `❌ ${data.error || '解析失敗'}` });
-    } catch { setMessage({ type: 'error', text: '❌ 上傳過程發生錯誤' }); }
-    finally { setUploading(false); e.target.value = ''; }
+      clearTimeout(progressTimer);
+
+      let data;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        throw new Error(`伺服器回應異常 (HTTP ${res.status} ${res.statusText})`);
+      }
+
+      if (!res.ok) {
+        setMessage({
+          type: 'error',
+          text: `❌ ${data.error || '匯入失敗'}`,
+          details: data.details || `HTTP 狀態碼: ${res.status}`,
+          errorId: data.errorId || `ERR-HTTP-${res.status}`,
+          timestamp: data.timestamp || new Date().toLocaleString(),
+          fileInfo: `${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+          operator: username,
+          targetUser: targetUser
+        });
+      } else {
+        setMessage({
+          type: 'success',
+          text: `✅ ${data.message}`
+        });
+      }
+    } catch (err) {
+      clearTimeout(progressTimer);
+      console.error('Upload Error:', err);
+      setMessage({
+        type: 'error',
+        text: '❌ 上傳失敗或連線逾時',
+        details: err.message || '連線中斷或伺服器處理逾時，請檢查網路連線或聯繫管理員',
+        errorId: `ERR-NET-${Date.now().toString(36).toUpperCase()}`,
+        timestamp: new Date().toLocaleString(),
+        fileInfo: `${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+        operator: username,
+        targetUser: targetUser
+      });
+    } finally {
+      setUploading(false);
+      setUploadProgressText('');
+      e.target.value = '';
+    }
+  };
+
+  const copyDiagnosticInfo = () => {
+    if (!message) return;
+    const report = [
+      '【Aegis 系統檔案匯入錯誤報告】',
+      `發生時間：${message.timestamp || new Date().toLocaleString()}`,
+      `操作人員：${message.operator || username}`,
+      `目標帳號：${message.targetUser || username}`,
+      `檔案資訊：${message.fileInfo || '未提供'}`,
+      `錯誤摘要：${message.text || '上傳失敗'}`,
+      `追蹤代碼：${message.errorId || 'N/A'}`,
+      `詳細原因：${message.details || '無詳細資訊'}`,
+      '----------------------------------------',
+      '請將此資訊提供給系統維護端 (Office of William) 協助查找問題。'
+    ].join('\n');
+
+    navigator.clipboard.writeText(report).then(() => {
+      setCopiedError(true);
+      setTimeout(() => setCopiedError(false), 3000);
+    }).catch(() => {
+      alert('複製失敗，請手動複製錯誤資訊');
+    });
   };
 
   const handleExport = () => {
@@ -247,24 +318,81 @@ export default function SettingsPage() {
             {/* 訊息 */}
         {message.text && (
           <div style={{
-            padding: '12px 16px', borderRadius: 10, marginBottom: 16,
-            background: message.type === 'success' ? '#dcfce7' : '#fee2e2',
+            padding: '14px 16px', borderRadius: 10, marginBottom: 16,
+            background: message.type === 'success' ? '#dcfce7' : '#fef2f2',
+            border: message.type === 'success' ? '1px solid #86efac' : '1px solid #fecaca',
             color: message.type === 'success' ? '#166534' : '#991b1b',
-            fontSize: '0.9rem', fontWeight: 600,
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8
+            fontSize: '0.9rem', fontWeight: 500,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
           }}>
-            <span>{message.text}</span>
-            {isGuest && (
-              <button
-                onClick={() => router.push('/dashboard/health')}
-                style={{
-                  background: '#dc2626', color: '#fff', border: 'none',
-                  padding: '4px 10px', borderRadius: 6, fontSize: '0.8rem',
-                  fontWeight: 600, cursor: 'pointer'
-                }}
-              >
-                前往血壓心跳資料 ›
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{message.text}</span>
+              {isGuest && (
+                <button
+                  onClick={() => router.push('/dashboard/health')}
+                  style={{
+                    background: '#dc2626', color: '#fff', border: 'none',
+                    padding: '4px 10px', borderRadius: 6, fontSize: '0.8rem',
+                    fontWeight: 600, cursor: 'pointer'
+                  }}
+                >
+                  前往血壓心跳資料 ›
+                </button>
+              )}
+            </div>
+
+            {/* 若為錯誤且有詳細資訊，顯示輔助診斷資訊與複製按鈕 */}
+            {message.type === 'error' && (message.details || message.errorId) && (
+              <div style={{
+                marginTop: 10, paddingTop: 10, borderTop: '1px dashed #fca5a5',
+                fontSize: '0.82rem', color: '#7f1d1d'
+              }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 8px', marginBottom: 8 }}>
+                  {message.errorId && (
+                    <>
+                      <span style={{ fontWeight: 600 }}>追蹤代碼：</span>
+                      <code style={{ background: '#fee2e2', padding: '1px 5px', borderRadius: 4, fontFamily: 'monospace' }}>{message.errorId}</code>
+                    </>
+                  )}
+                  {message.details && (
+                    <>
+                      <span style={{ fontWeight: 600 }}>詳細原因：</span>
+                      <span>{message.details}</span>
+                    </>
+                  )}
+                  {message.fileInfo && (
+                    <>
+                      <span style={{ fontWeight: 600 }}>相關檔案：</span>
+                      <span>{message.fileInfo}</span>
+                    </>
+                  )}
+                  {message.timestamp && (
+                    <>
+                      <span style={{ fontWeight: 600 }}>發生時間：</span>
+                      <span>{message.timestamp}</span>
+                    </>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    onClick={copyDiagnosticInfo}
+                    style={{
+                      background: copiedError ? '#15803d' : '#b91c1c',
+                      color: '#fff', border: 'none',
+                      padding: '5px 12px', borderRadius: 6,
+                      fontSize: '0.78rem', fontWeight: 600,
+                      cursor: 'pointer', transition: 'background 0.2s'
+                    }}
+                  >
+                    {copiedError ? '✅ 已複製錯誤資訊！' : '📋 複製除錯資訊 (提供維護端)'}
+                  </button>
+                  <span style={{ fontSize: '0.74rem', color: '#991b1b', opacity: 0.85 }}>
+                    若問題持續，請複製資訊並通知系統管理人員 (Office of William)。
+                  </span>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -404,21 +532,44 @@ export default function SettingsPage() {
           <div style={{ position: 'relative', overflow: 'hidden' }}>
             <button disabled={uploading || isGuest} style={{
               width: '100%', padding: '14px',
-              background: isGuest ? '#f1f5f9' : '#f8fafc',
-              border: isGuest ? '2px dashed #cbd5e1' : '2px dashed #0ea5e9',
-              borderRadius: 10, color: isGuest ? '#94a3b8' : '#0369a1',
-              fontWeight: 500, fontSize: '0.9rem',
-              cursor: isGuest ? 'not-allowed' : 'pointer',
+              background: isGuest ? '#f1f5f9' : uploading ? '#f0f9ff' : '#f8fafc',
+              border: isGuest ? '2px dashed #cbd5e1' : uploading ? '2px dashed #38bdf8' : '2px dashed #0ea5e9',
+              borderRadius: 10, color: isGuest ? '#94a3b8' : uploading ? '#0284c7' : '#0369a1',
+              fontWeight: 600, fontSize: '0.9rem',
+              cursor: isGuest || uploading ? 'not-allowed' : 'pointer',
               transition: 'all 0.2s',
             }}>
-              {isGuest ? '🔒 訪客體驗模式不開放檔案匯入' : uploading ? '⏳ 解析匯入中...' : '📁 點擊選擇檔案 (.bp, .db, .csv, .json)'}
+              {isGuest ? '🔒 訪客體驗模式不開放檔案匯入' : uploading ? '⏳ 檔案處理與同步中...' : '📁 點擊選擇檔案 (.bp, .db, .csv, .json)'}
             </button>
             <input
               type="file" accept=".bp,.db,.csv,.json"
               onChange={handleFileUpload} disabled={uploading || isGuest}
-              style={{ position: 'absolute', left: 0, top: 0, opacity: 0, cursor: isGuest ? 'not-allowed' : 'pointer', height: '100%', width: '100%' }}
+              style={{ position: 'absolute', left: 0, top: 0, opacity: 0, cursor: isGuest || uploading ? 'not-allowed' : 'pointer', height: '100%', width: '100%' }}
             />
           </div>
+
+          {/* 匯入處理中之動態提示卡片 */}
+          {uploading && (
+            <div style={{
+              marginTop: 12, padding: '12px 14px',
+              background: '#f0f9ff', border: '1px solid #bae6fd',
+              borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12,
+              animation: 'pulse 2s infinite'
+            }}>
+              <div className="spinner" style={{
+                width: 20, height: 20, borderWidth: 2,
+                borderTopColor: '#0284c7', flexShrink: 0
+              }}></div>
+              <div style={{ fontSize: '0.85rem', color: '#0369a1', lineHeight: 1.4 }}>
+                <div style={{ fontWeight: 700 }}>
+                  {uploadProgressText || '正在處理檔案，請稍候...'}
+                </div>
+                <div style={{ fontSize: '0.76rem', color: '#0284c7', marginTop: 2 }}>
+                  系統正進行雲端資料批次校驗與寫入，請勿關閉網頁或切換頁面以確保資料完整性。
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 資料匯出 */}
           <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>

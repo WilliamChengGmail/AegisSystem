@@ -6,18 +6,30 @@ import { join } from 'path';
 import os from 'os';
 
 export async function POST(request) {
+  let operatorUsername = '';
+  let targetUsername = '';
+  let fileName = '';
+
   try {
     const formData = await request.formData();
     const file = formData.get('file');
-    const operatorUsername = formData.get('operator');
-    const targetUsername = formData.get('targetUser');
+    operatorUsername = formData.get('operator') || '';
+    targetUsername = formData.get('targetUser') || '';
 
     if (!file || !operatorUsername || !targetUsername) {
-      return NextResponse.json({ error: '請提供檔案、操作者與目標帳號' }, { status: 400 });
+      return NextResponse.json({ 
+        error: '請提供檔案、操作者與目標帳號',
+        details: '缺少必要的上傳欄位 (file, operator, targetUser)'
+      }, { status: 400 });
     }
 
+    fileName = file.name || 'unknown_file';
+
     if (operatorUsername === 'guest') {
-      return NextResponse.json({ error: '🔒 訪客體驗模式無法匯入或上傳檔案' }, { status: 403 });
+      return NextResponse.json({ 
+        error: '🔒 訪客體驗模式無法匯入或上傳檔案',
+        details: '訪客帳號 (guest) 僅具備唯讀權限'
+      }, { status: 403 });
     }
 
     const turso = getDb();
@@ -29,14 +41,20 @@ export async function POST(request) {
     });
 
     if (operatorRes.rows.length === 0) {
-      return NextResponse.json({ error: '找不到操作者帳號' }, { status: 404 });
+      return NextResponse.json({ 
+        error: '找不到操作者帳號',
+        details: `帳號 [${operatorUsername}] 不存在於系統使用者清單中`
+      }, { status: 404 });
     }
     const operatorId = operatorRes.rows[0].id;
     const operatorRole = operatorRes.rows[0].role || 'users';
 
     // 權限防呆檢查
     if (operatorRole === 'users' && operatorUsername !== targetUsername) {
-      return NextResponse.json({ error: '一般用戶只能上傳資料至自己的帳號' }, { status: 403 });
+      return NextResponse.json({ 
+        error: '一般用戶只能上傳資料至自己的帳號',
+        details: `帳號 [${operatorUsername}] 權限為一般用戶，無法代為匯入至 [${targetUsername}]`
+      }, { status: 403 });
     }
 
     // 取得目標使用者 ID
@@ -46,12 +64,14 @@ export async function POST(request) {
     });
 
     if (targetRes.rows.length === 0) {
-      return NextResponse.json({ error: '找不到目標帳號' }, { status: 404 });
+      return NextResponse.json({ 
+        error: '找不到目標帳號',
+        details: `目標帳號 [${targetUsername}] 不存在於系統使用者清單中`
+      }, { status: 404 });
     }
     const targetUserId = targetRes.rows[0].id;
 
     // 解析檔案內容
-    const fileName = file.name || 'unknown_file';
     const lowerName = fileName.toLowerCase();
     let records = [];
 
@@ -87,7 +107,10 @@ export async function POST(request) {
           })).filter(r => !isNaN(r.sys) && !isNaN(r.dia) && !isNaN(r.pul) && r.date);
         }
       } catch (e) {
-        return NextResponse.json({ error: 'JSON 格式解析失敗' }, { status: 400 });
+        return NextResponse.json({ 
+          error: 'JSON 格式解析失敗', 
+          details: `無法解析檔案內容為有效的 JSON 陣列：${e.message}` 
+        }, { status: 400 });
       }
     } else {
       // 假設為 SQLite .bp, .db, .pb
@@ -103,30 +126,40 @@ export async function POST(request) {
       } catch (e) {
         console.error('SQLite parsing error:', e);
         await unlink(tempFilePath).catch(() => {});
-        return NextResponse.json({ error: '檔案格式錯誤，無法解析資料庫' }, { status: 400 });
+        return NextResponse.json({ 
+          error: '檔案格式錯誤，無法解析資料庫', 
+          details: `SQLite 讀取失敗，請確認檔案是否具備 bp 資料表結構：${e.message}`
+        }, { status: 400 });
       }
       await unlink(tempFilePath).catch(() => {});
     }
 
     if (records.length === 0) {
-       return NextResponse.json({ success: true, message: '檔案中沒有有效的血壓紀錄', count: 0 });
+      return NextResponse.json({ 
+        success: true, 
+        message: '檔案解析完成，但未發現有效的血壓紀錄資料', 
+        count: 0 
+      });
     }
 
-    // 將紀錄匯入至 Turso
+    // 將紀錄批次 (Batch) 匯入至 Turso，每批 100 筆，避免逐筆寫入導致的網路超時與卡頓
     let inserted = 0;
-    for (const record of records) {
-      try {
-        const res = await turso.execute({
-          sql: `INSERT INTO health_data (user_id, measure_time, sys, dia, hr) 
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, measure_time) DO NOTHING`,
-          args: [targetUserId, record.date, record.sys, record.dia, record.pul]
-        });
+    const BATCH_SIZE = 100;
+
+    for (let i = 0; i < records.length; i += BATCH_SIZE) {
+      const chunk = records.slice(i, i + BATCH_SIZE);
+      const statements = chunk.map(record => ({
+        sql: `INSERT INTO health_data (user_id, measure_time, sys, dia, hr) 
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(user_id, measure_time) DO NOTHING`,
+        args: [targetUserId, record.date, record.sys, record.dia, record.pul]
+      }));
+
+      const batchResults = await turso.batch(statements, 'write');
+      for (const res of batchResults) {
         if (res.rowsAffected > 0) {
           inserted++;
         }
-      } catch (e) {
-        // 忽略個別寫入錯誤
       }
     }
 
@@ -143,9 +176,29 @@ export async function POST(request) {
       console.error('寫入歷程失敗:', histErr);
     }
 
+    // 寫入系統日誌
+    try {
+      await turso.execute({
+        sql: `INSERT INTO system_logs (level, category, action, operator, target_user, file_name, message, details)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          'INFO',
+          'IMPORT',
+          'file_import_success',
+          operatorUsername,
+          targetUsername,
+          fileName,
+          `成功匯入資料：共解析 ${records.length} 筆，寫入 ${inserted} 筆，略過重複 ${duplicates} 筆`,
+          JSON.stringify({ total: records.length, inserted, duplicates })
+        ]
+      });
+    } catch (logErr) {
+      console.error('寫入 system_logs 失敗:', logErr);
+    }
+
     return NextResponse.json({ 
       success: true, 
-      message: `匯入完成。共解析 ${records.length} 筆，成功匯入 ${inserted} 筆，略過重複 ${duplicates} 筆。`,
+      message: `匯入完成！共解析 ${records.length} 筆，成功匯入 ${inserted} 筆，略過重複 ${duplicates} 筆。`,
       total: records.length,
       inserted: inserted,
       duplicates: duplicates,
@@ -153,7 +206,35 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('Upload Error:', error);
-    return NextResponse.json({ error: '伺服器發生未知的錯誤' }, { status: 500 });
+    const errorId = `ERR-UPLOAD-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    console.error(`[${errorId}] Upload Error:`, error);
+
+    // 記錄錯誤至資料庫 system_logs
+    try {
+      const turso = getDb();
+      await turso.execute({
+        sql: `INSERT INTO system_logs (level, category, action, operator, target_user, file_name, message, details)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          'ERROR',
+          'IMPORT',
+          'file_upload_error',
+          operatorUsername || 'unknown',
+          targetUsername || 'unknown',
+          fileName || 'unknown',
+          error.message || '匯入時發生未預期的系統錯誤',
+          JSON.stringify({ errorId, errorName: error.name, stack: error.stack })
+        ]
+      });
+    } catch (logErr) {
+      console.error('Failed to log error to system_logs:', logErr);
+    }
+
+    return NextResponse.json({ 
+      error: '伺服器匯入處理失敗',
+      details: error.message || '未知錯誤，請檢附錯誤追蹤代碼聯繫系統管理員',
+      errorId,
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
   }
 }
