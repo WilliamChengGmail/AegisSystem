@@ -1,0 +1,58 @@
+#powershell
+
+在 AegisSystem 專案中，主要運行的核心服務為位於 web-login 的 Next.js 全端服務（包含前端 UI、後端 API 與 Turso/LibSQL 資料庫整合）。
+
+以下是於本地端（Local）啟動與測試服務的完整步驟：
+
+步驟 1：切換至服務目錄並確認環境
+
+開啟 PowerShell 或終端機，進入 web-login 目錄：
+
+powershell
+cd d:\AegisSystem\web-login
+
+IMPORTANT
+
+請確認 web-login 目錄下已存在 .env.local 檔案，並正確設定 Turso 資料庫連線變數：
+
+TURSO_DATABASE_URL
+TURSO_AUTH_TOKEN
+
+若依賴套件尚未安裝或有更新，可先執行：
+
+powershell
+npm install
+步驟 2：測試資料庫連線與結構 (DB Connectivity Test)
+
+在啟動 Web 服務前，可先透過專案內的檢核腳本測試遠端 Turso 資料庫是否連線正常：
+
+powershell
+# 檢測資料庫連線、檢查表格與現有筆數
+node inspect-turso.js
+# 或檢查使用者表格 Schema
+node scripts/check-schema.mjs
+步驟 3：啟動本地開發伺服器 (Start Dev Server)
+
+執行以下指令啟動開發環境：
+
+powershell
+npm run dev
+專案內已預設設定 cross-env CHOKIDAR_USEPOLLING=true WATCHPACK_POLLING=true，能確保在 Windows 環境下修改程式碼時熱重載（Hot Reload）正常運作。
+伺服器就緒後，預設會監聽於： 👉 http://localhost:3000
+步驟 4：進行功能驗證與測試
+瀏覽器前端測試：
+開啟瀏覽器訪問 http://localhost:3000。
+測試登入功能、儀表板（Dashboard）、健康數據曲線圖、匯入/匯出 CSV 功能及使用者設定頁面。
+API 端點測試（可在另一個終端機使用 PowerShell 或 Postman / curl 驗證）：
+powershell
+# 測試系統設定 API
+Invoke-RestMethod -Uri "http://localhost:3000/api/configs" -Method GET
+步驟 5：生產環境打包測試 (Production Build Test)
+
+若需要驗證即將部署至雲端（Vercel）的構建是否正常、是否有代碼解析或語法錯誤，建議在本地執行打包測試：
+
+powershell
+# 1. 執行打包構建檢查
+npm run build
+# 2. 以 Production 模式在本地啟動驗證
+npm run start

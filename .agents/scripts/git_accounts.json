@@ -1,0 +1,16 @@
+{
+  "accounts": [
+    {
+      "name": "個人帳號",
+      "username": "your-personal-github-username",
+      "email": "you@example.com",
+      "sshKey": "C:\\Users\\PlexBioSw\\.ssh\\id_ed25519_personal"
+    },
+    {
+      "name": "公司帳號",
+      "username": "your-company-github-username",
+      "email": "you@company.com",
+      "sshKey": "C:\\Users\\PlexBioSw\\.ssh\\id_ed25519_company"
+    }
+  ]
+}
