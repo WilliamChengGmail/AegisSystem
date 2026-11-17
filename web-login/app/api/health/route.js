@@ -74,7 +74,7 @@ export async function GET(request) {
 
     // 撈取血壓資料
     const dataRes = await db.execute({
-      sql: 'SELECT measure_time as date, sys, dia, hr as pul FROM health_data WHERE user_id = ? ORDER BY measure_time DESC',
+      sql: 'SELECT measure_time as date, sys, dia, hr as pul, location, posture, feel, weight, mark FROM health_data WHERE user_id = ? ORDER BY measure_time DESC',
       args: [targetInfo.id]
     });
 

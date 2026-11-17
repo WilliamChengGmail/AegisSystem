@@ -6,6 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Brush, ReferenceLine
 } from 'recharts';
+import { printHealthReport, exportHealthReportHtml } from './reportGenerator';
 
 // ========== 常數 ==========
 
@@ -378,6 +379,22 @@ export default function HealthDashboard() {
   });
   const [savedHideRecordDetails, setSavedHideRecordDetails] = useState(false);
 
+  // 列印與匯出報告 Modal 狀態
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printIncludeChart, setPrintIncludeChart] = useState(true);
+  const [printAdvancedChart, setPrintAdvancedChart] = useState(false);
+  const [printIgnoreMissingDates, setPrintIgnoreMissingDates] = useState(false);
+  const [printOnlyDailyAvg, setPrintOnlyDailyAvg] = useState(false);
+  const [printHideDailyAvg, setPrintHideDailyAvg] = useState(false);
+  const [printBatchFilter, setPrintBatchFilter] = useState('none');
+  const [printVisibleColumns, setPrintVisibleColumns] = useState({
+    location: true, // 預設列印
+    posture: true,  // 預設列印
+    feel: false,    // 預設不列印
+    weight: false,  // 預設不列印
+    mark: false     // 預設不列印
+  });
+
   // Brush 連動
   const [brushRange, setBrushRange] = useState(null);
   const [brushKey, setBrushKey] = useState(0); // 用於強制重新渲染 Brush
@@ -454,11 +471,20 @@ export default function HealthDashboard() {
     })();
   }, [targetUser, isGuest]);
 
-  // ===== 前端篩選 (時間區間 + 連續資料批次過濾) =====
+  // ===== 基礎時間區間篩選資料集 =====
+  const rangeFilteredData = useMemo(() => {
+    return filterByRange(allData, activeRange, customStart, customEnd);
+  }, [allData, activeRange, customStart, customEnd]);
+
+  // ===== 頁面檢視篩選 (時間區間 + 頁面連續資料批次過濾) =====
   const filteredData = useMemo(() => {
-    const rangeFiltered = filterByRange(allData, activeRange, customStart, customEnd);
-    return applyBatchFilter(rangeFiltered, batchFilterOption);
-  }, [allData, activeRange, customStart, customEnd, batchFilterOption]);
+    return applyBatchFilter(rangeFilteredData, batchFilterOption);
+  }, [rangeFilteredData, batchFilterOption]);
+
+  // ===== 列印專屬資料來源 (依據列印選項之連續資料篩選計算，影響整份列印文件) =====
+  const printSourceData = useMemo(() => {
+    return applyBatchFilter(rangeFilteredData, printBatchFilter);
+  }, [rangeFilteredData, printBatchFilter]);
 
   // ===== 判斷單筆紀錄是否異常 (高標或低標) =====
   const isRowAbnormal = useCallback((row) => {
@@ -677,7 +703,32 @@ export default function HealthDashboard() {
             </select>
           )}
         </div>
-        <div style={{ width: 60 }}></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            className="btn-print-report"
+            onClick={() => setShowPrintModal(true)}
+            title="列印或匯出符合範本風格之血壓報告單 (PDF / HTML)"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 14px',
+              background: '#0284c7',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              boxShadow: '0 2px 4px rgba(2, 132, 199, 0.25)',
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            🖨️ 列印/匯出報告
+          </button>
+        </div>
       </header>
 
       {/* 時間區間選擇 */}
@@ -1061,6 +1112,279 @@ export default function HealthDashboard() {
             ))}
           </div>
         </>
+      )}
+
+      {/* 列印與匯出報告 Modal */}
+      {showPrintModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, padding: '16px'
+        }}>
+          <div style={{
+            background: '#ffffff', borderRadius: '16px', maxWidth: '580px', width: '100%',
+            maxHeight: '92vh', overflowY: 'auto',
+            padding: '24px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1px solid #e2e8f0', animation: 'fadeIn 0.2s ease-out'
+          }}>
+            {/* 標題列 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🖨️ 血壓報告單列印與匯出
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#64748b', padding: '4px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 篩選與狀態摘要卡片 */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.88rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: '#64748b' }}>對象帳號：</span>
+                <span style={{ fontWeight: 600, color: '#0284c7' }}>{targetUser || username}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: '#64748b' }}>列印資料筆數：</span>
+                <span style={{ fontWeight: 700, color: '#0f172a' }}>{printSourceData.length} 筆</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>版面樣式規格：</span>
+                <span style={{ fontWeight: 600, color: '#059669' }}>血壓報告單標準 (全日均樣式區隔 / 蜜桃粉橘異常標示)</span>
+              </div>
+            </div>
+
+            {/* 1. 連續資料篩選 (影響整份列印文件) */}
+            <div style={{ marginBottom: '16px', padding: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#166534', marginBottom: '6px' }}>
+                ⚡ 連續資料篩選條件 (做為整份列印報告之資料來源)：
+              </label>
+              <select
+                value={printBatchFilter}
+                onChange={(e) => setPrintBatchFilter(e.target.value)}
+                style={{
+                  width: '100%', padding: '8px 10px', borderRadius: '6px',
+                  border: '1.5px solid #86efac', outline: 'none',
+                  fontSize: '0.85rem', fontWeight: 600, color: '#14532d', background: '#ffffff'
+                }}
+              >
+                <option value="none">不篩選 (完整保留所有紀錄，預設)</option>
+                <option value="first_two">每次量測時間最早 2 筆</option>
+                <option value="last_two">每次量測時間最晚 2 筆</option>
+                <option value="highest_two_sys">每次量測收縮壓最高 2 筆</option>
+                <option value="lowest_two_sys">每次量測收縮壓最低 2 筆</option>
+              </select>
+              <p style={{ fontSize: '0.75rem', color: '#15803d', marginTop: '4px' }}>
+                ※ 此篩選會同步計算並反映於上方趨勢折線圖、每日全日均與下方資料表格。
+              </p>
+            </div>
+
+            {/* 2. 動態表格欄位勾選 (自適應調整欄寬) */}
+            <div style={{ marginBottom: '16px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155' }}>
+                  📋 表格顯示欄位設定：
+                </span>
+                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                  (日期/時間/高壓/低壓/心率 為必選欄位)
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(95px, 1fr))', gap: '8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#1e293b', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={printVisibleColumns.location}
+                    onChange={(e) => setPrintVisibleColumns({ ...printVisibleColumns, location: e.target.checked })}
+                    style={{ accentColor: '#0284c7' }}
+                  />
+                  位置 (預設)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#1e293b', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={printVisibleColumns.posture}
+                    onChange={(e) => setPrintVisibleColumns({ ...printVisibleColumns, posture: e.target.checked })}
+                    style={{ accentColor: '#0284c7' }}
+                  />
+                  姿勢 (預設)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#475569', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={printVisibleColumns.feel}
+                    onChange={(e) => setPrintVisibleColumns({ ...printVisibleColumns, feel: e.target.checked })}
+                    style={{ accentColor: '#0284c7' }}
+                  />
+                  感覺
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#475569', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={printVisibleColumns.weight}
+                    onChange={(e) => setPrintVisibleColumns({ ...printVisibleColumns, weight: e.target.checked })}
+                    style={{ accentColor: '#0284c7' }}
+                  />
+                  體重
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#475569', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={printVisibleColumns.mark}
+                    onChange={(e) => setPrintVisibleColumns({ ...printVisibleColumns, mark: e.target.checked })}
+                    style={{ accentColor: '#0284c7' }}
+                  />
+                  備注
+                </label>
+              </div>
+              <p style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
+                ※ 系統將依勾選數量自動等比分配欄寬，保持 A4 滿版且不影響整體表格寬度。
+              </p>
+            </div>
+
+            {/* 3. 圖表與呈現選項 */}
+            <div style={{ marginBottom: '20px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+              <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>
+                📊 圖表與排版進階選項：
+              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem', color: '#1e293b', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={printIncludeChart}
+                    onChange={(e) => setPrintIncludeChart(e.target.checked)}
+                    style={{ width: '16px', height: '16px', accentColor: '#0284c7' }}
+                  />
+                  包含首頁趨勢折線圖 (高壓 / 低壓 / 心率)
+                </label>
+
+                {printIncludeChart && (
+                  <div style={{ paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: '#334155', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={printAdvancedChart}
+                        onChange={(e) => setPrintAdvancedChart(e.target.checked)}
+                        style={{ accentColor: '#0284c7' }}
+                      />
+                      曲線圖進階呈現 (加入早晨 ☀️ / 晚間 🌙 時段趨勢輔助線)
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: '#334155', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={printIgnoreMissingDates}
+                        onChange={(e) => setPrintIgnoreMissingDates(e.target.checked)}
+                        style={{ accentColor: '#0284c7' }}
+                      />
+                      圖表忽略空白日期 (折線緊密相連，不留未量測日期的斷距)
+                    </label>
+                  </div>
+                )}
+
+                <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '10px', marginTop: '2px' }}>
+                  <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>
+                    📋 表格明細與全日均呈現：
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: '4px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem', color: '#1e293b', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={printOnlyDailyAvg}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setPrintOnlyDailyAvg(val);
+                          if (val) setPrintHideDailyAvg(false);
+                        }}
+                        style={{ width: '16px', height: '16px', accentColor: '#0284c7' }}
+                      />
+                      僅顯示每日「全日均」摘要列
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem', color: '#1e293b', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={printHideDailyAvg}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setPrintHideDailyAvg(val);
+                          if (val) setPrintOnlyDailyAvg(false);
+                        }}
+                        style={{ width: '16px', height: '16px', accentColor: '#0284c7' }}
+                      />
+                      不顯示每日全日均 摘要列
+                    </label>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px', paddingLeft: '4px' }}>
+                    ※ 兩者皆未勾選時，為預設完整顯示（同時呈現每日全日均與量測明細）。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 動作按鈕 */}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(false)}
+                style={{
+                  padding: '9px 16px', borderRadius: '8px', border: '1px solid #cbd5e1',
+                  background: '#f1f5f9', color: '#475569', fontWeight: 600, fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  exportHealthReportHtml(printSourceData, settings, {
+                    includeChart: printIncludeChart,
+                    advancedChart: printAdvancedChart,
+                    ignoreMissingDates: printIgnoreMissingDates,
+                    hideRecordDetails: printOnlyDailyAvg,
+                    showDailyAvg: !printHideDailyAvg,
+                    visibleColumns: printVisibleColumns,
+                    targetUserName: targetUser || username
+                  });
+                  setShowPrintModal(false);
+                }}
+                style={{
+                  padding: '9px 16px', borderRadius: '8px', border: '1px solid #0284c7',
+                  background: '#f0f9ff', color: '#0284c7', fontWeight: 600, fontSize: '0.88rem',
+                  cursor: 'pointer'
+                }}
+              >
+                💾 下載 HTML 檔案
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  printHealthReport(printSourceData, settings, {
+                    includeChart: printIncludeChart,
+                    advancedChart: printAdvancedChart,
+                    ignoreMissingDates: printIgnoreMissingDates,
+                    hideRecordDetails: printOnlyDailyAvg,
+                    showDailyAvg: !printHideDailyAvg,
+                    visibleColumns: printVisibleColumns,
+                    targetUserName: targetUser || username
+                  });
+                  setShowPrintModal(false);
+                }}
+                style={{
+                  padding: '9px 18px', borderRadius: '8px', border: 'none',
+                  background: '#0284c7', color: '#ffffff', fontWeight: 600, fontSize: '0.88rem',
+                  cursor: 'pointer', boxShadow: '0 2px 6px rgba(2, 132, 199, 0.3)'
+                }}
+              >
+                🖨️ 另存為 PDF / 列印
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

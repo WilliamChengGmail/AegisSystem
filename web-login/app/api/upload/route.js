@@ -5,6 +5,26 @@ import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import os from 'os';
 
+const LOCATION_MAP = {
+  '1': '左臂',
+  '2': '右臂',
+  '3': '左手腕',
+  '4': '右手腕',
+  '左臂': '左臂',
+  '右臂': '右臂',
+  '左手腕': '左手腕',
+  '右手腕': '右手腕'
+};
+
+const POSTURE_MAP = {
+  '1': '坐著',
+  '2': '躺著',
+  '3': '站著',
+  '坐著': '坐著',
+  '躺著': '躺著',
+  '站著': '站著'
+};
+
 export async function POST(request) {
   let operatorUsername = '';
   let targetUsername = '';
@@ -89,8 +109,24 @@ export async function POST(request) {
           const sys = parseInt(parts[2].trim());
           const dia = parseInt(parts[3].trim());
           const pul = parseInt(parts[4].trim());
+          const location = parts[5] ? (LOCATION_MAP[parts[5].trim()] || parts[5].trim()) : '左臂';
+          const posture = parts[6] ? (POSTURE_MAP[parts[6].trim()] || parts[6].trim()) : '坐著';
+          const feel = parts[7] ? parts[7].trim() : null;
+          const weight = parts[8] && !isNaN(parseFloat(parts[8].trim())) ? parseFloat(parts[8].trim()) : null;
+          const mark = parts[9] ? parts[9].trim() : null;
+
           if (!isNaN(sys) && !isNaN(dia) && !isNaN(pul) && date && time) {
-            records.push({ date: `${date} ${time}`, sys, dia, pul });
+            records.push({ 
+              date: `${date} ${time}`, 
+              sys, 
+              dia, 
+              pul,
+              location,
+              posture,
+              feel,
+              weight,
+              mark
+            });
           }
         }
       }
@@ -103,7 +139,12 @@ export async function POST(request) {
             date: item.time ? `${item.date} ${item.time}` : item.date, // 支援拆分或合併
             sys: parseInt(item.sys),
             dia: parseInt(item.dia),
-            pul: parseInt(item.pul)
+            pul: parseInt(item.pul),
+            location: item.location ? (LOCATION_MAP[String(item.location).trim()] || String(item.location).trim()) : '左臂',
+            posture: item.posture ? (POSTURE_MAP[String(item.posture).trim()] || String(item.posture).trim()) : '坐著',
+            feel: item.feel || null,
+            weight: item.weight && !isNaN(Number(item.weight)) ? Number(item.weight) : null,
+            mark: item.mark || null
           })).filter(r => !isNaN(r.sys) && !isNaN(r.dia) && !isNaN(r.pul) && r.date);
         }
       } catch (e) {
@@ -121,8 +162,31 @@ export async function POST(request) {
 
       try {
         const sqliteDb = new Database(tempFilePath, { fileMustExist: true });
-        records = sqliteDb.prepare('SELECT date, sys, dia, pul FROM bp').all();
+        const tableInfo = sqliteDb.prepare('PRAGMA table_info(bp)').all();
+        const colNames = new Set(tableInfo.map(c => c.name.toLowerCase()));
+        
+        const hasCol = (name) => colNames.has(name.toLowerCase());
+        const selectCols = ['date', 'sys', 'dia', 'pul'];
+        if (hasCol('location')) selectCols.push('location');
+        if (hasCol('posture')) selectCols.push('posture');
+        if (hasCol('feel')) selectCols.push('feel');
+        if (hasCol('weight')) selectCols.push('weight');
+        if (hasCol('mark')) selectCols.push('mark');
+
+        const rawRows = sqliteDb.prepare(`SELECT ${selectCols.join(', ')} FROM bp`).all();
         sqliteDb.close();
+
+        records = rawRows.map(r => ({
+          date: r.date,
+          sys: parseInt(r.sys),
+          dia: parseInt(r.dia),
+          pul: parseInt(r.pul),
+          location: r.location !== undefined ? (LOCATION_MAP[String(r.location).trim()] || (r.location ? String(r.location) : '左臂')) : '左臂',
+          posture: r.posture !== undefined ? (POSTURE_MAP[String(r.posture).trim()] || (r.posture ? String(r.posture) : '坐著')) : '坐著',
+          feel: r.feel || null,
+          weight: r.weight && Number(r.weight) > 0 ? Number(r.weight) : null,
+          mark: r.mark || null
+        })).filter(r => !isNaN(r.sys) && !isNaN(r.dia) && !isNaN(r.pul) && r.date);
       } catch (e) {
         console.error('SQLite parsing error:', e);
         await unlink(tempFilePath).catch(() => {});
@@ -149,10 +213,29 @@ export async function POST(request) {
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const chunk = records.slice(i, i + BATCH_SIZE);
       const statements = chunk.map(record => ({
-        sql: `INSERT INTO health_data (user_id, measure_time, sys, dia, hr) 
-              VALUES (?, ?, ?, ?, ?)
-              ON CONFLICT(user_id, measure_time) DO NOTHING`,
-        args: [targetUserId, record.date, record.sys, record.dia, record.pul]
+        sql: `INSERT INTO health_data (user_id, measure_time, sys, dia, hr, location, posture, feel, weight, mark) 
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(user_id, measure_time) DO UPDATE SET
+                sys = excluded.sys,
+                dia = excluded.dia,
+                hr = excluded.hr,
+                location = COALESCE(excluded.location, health_data.location),
+                posture = COALESCE(excluded.posture, health_data.posture),
+                feel = COALESCE(excluded.feel, health_data.feel),
+                weight = COALESCE(excluded.weight, health_data.weight),
+                mark = COALESCE(excluded.mark, health_data.mark)`,
+        args: [
+          targetUserId, 
+          record.date, 
+          record.sys, 
+          record.dia, 
+          record.pul,
+          record.location || null,
+          record.posture || null,
+          record.feel || null,
+          record.weight || null,
+          record.mark || null
+        ]
       }));
 
       const batchResults = await turso.batch(statements, 'write');
